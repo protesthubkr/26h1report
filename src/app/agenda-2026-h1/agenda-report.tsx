@@ -77,6 +77,16 @@ type FeaturedIssue = PublicIssue & {
   phaseTitle: string;
 };
 
+type OpeningEvent = {
+  accent: string;
+  agendaTitle: string;
+  dateLabel: string;
+  description: string;
+  impactLabel: string;
+  phaseTitle: string;
+  title: string;
+};
+
 type PublicStatement = {
   date: string;
   organization: string;
@@ -142,11 +152,11 @@ type ReaderState =
       storyIndex: number;
     };
 
-const reviewSlideCount = 5;
+const reviewSlideCount = 1;
 const maxIssueSlidesPerPhase = 4;
 
 export function AgendaReport({ data }: { data: PublicAgendaData }) {
-  const reviewIssues = useMemo(() => pickReviewIssues(data.featuredIssues), [data]);
+  const openingEvents = useMemo(() => pickOpeningEvents(data), [data]);
   const [state, setState] = useState<ReaderState>({
     mode: "review",
     reviewIndex: 0,
@@ -159,14 +169,13 @@ export function AgendaReport({ data }: { data: PublicAgendaData }) {
       ? data.agendas.find((agenda) => agenda.id === state.agendaId) ?? data.agendas[0]
       : data.agendas.find((agenda) => agenda.id === data.defaultAgendaId) ?? data.agendas[0];
   const storySlides = useMemo(() => buildStorySlides(activeAgenda), [activeAgenda]);
-  const reviewIssue = reviewIssues[state.reviewIndex] ?? reviewIssues[0];
   const storySlide = storySlides[state.mode === "story" ? state.storyIndex : 0];
-  const progress = getProgress(state, reviewIssues.length, storySlides.length);
+  const progress = getProgress(state, reviewSlideCount, storySlides.length);
 
   function goNext() {
     setState((current) => {
       if (current.mode === "review") {
-        if (current.reviewIndex < reviewIssues.length - 1) {
+        if (current.reviewIndex < reviewSlideCount - 1) {
           return { ...current, reviewIndex: current.reviewIndex + 1 };
         }
         return { ...current, mode: "agenda-select" };
@@ -193,7 +202,7 @@ export function AgendaReport({ data }: { data: PublicAgendaData }) {
       if (current.mode === "agenda-select") {
         return {
           mode: "review",
-          reviewIndex: reviewIssues.length - 1,
+          reviewIndex: reviewSlideCount - 1,
           storyIndex: 0,
         };
       }
@@ -258,8 +267,8 @@ export function AgendaReport({ data }: { data: PublicAgendaData }) {
           onTouchStart={handleTouchStart}
         >
           <AmbientLines />
-          {state.mode === "review" && reviewIssue ? (
-            <ReviewPage issue={reviewIssue} index={state.reviewIndex} total={reviewIssues.length} />
+          {state.mode === "review" ? (
+            <OpeningReviewPage events={openingEvents} />
           ) : null}
 
           {state.mode === "agenda-select" ? (
@@ -318,6 +327,61 @@ function ProgressRule({ progress }: { progress: number }) {
   );
 }
 
+function OpeningReviewPage({ events }: { events: OpeningEvent[] }) {
+  return (
+    <article className="relative flex min-h-[680px] w-full flex-col justify-between overflow-hidden bg-black p-12 max-sm:min-h-0 max-sm:p-5">
+      <div className="opening-rise max-w-[1120px]">
+        <h1 className="max-w-[980px] text-[clamp(42px,7vw,104px)] font-black leading-[0.98] tracking-normal text-[#f8f5ec] max-sm:text-[38px]">
+          다사다난했던 2026년 상반기,
+          <br />
+          안녕하셨나요?
+        </h1>
+      </div>
+
+      <section className="mt-10 min-h-0 max-sm:mt-6">
+        <div className="mb-4 flex items-end justify-between gap-6 max-sm:mb-3">
+          <SmallMeta>상반기 주요 사건</SmallMeta>
+          <span className="font-mono text-[11px] font-black text-[#6e6b62]">
+            임팩트 순
+          </span>
+        </div>
+
+        <ol className="max-h-[43vh] overflow-y-auto border-t border-[#292722] max-sm:max-h-[49svh]">
+          {events.map((event, index) => (
+            <li
+              className="opening-event-rise grid grid-cols-[56px_minmax(0,150px)_minmax(0,1fr)] items-start gap-4 border-b border-[#24231f] py-3 opacity-0 max-md:grid-cols-[44px_minmax(0,1fr)] max-sm:gap-3 max-sm:py-3"
+              key={`${event.title}-${index}`}
+              style={{ animationDelay: `${720 + index * 115}ms` }}
+            >
+              <span className="font-mono text-[12px] font-black text-[#77746a]">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <div className="max-md:order-3 max-md:col-span-2 max-md:ml-[56px] max-sm:ml-[44px]">
+                <span
+                  className="mb-2 block h-[3px] w-9"
+                  style={{ backgroundColor: event.accent }}
+                />
+                <p className="text-[12px] font-black leading-5 text-[#9b978d]">
+                  {event.dateLabel} · {event.impactLabel}
+                </p>
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-[19px] font-black leading-snug text-[#f5f2e8] max-sm:text-[17px]">
+                  {event.title}
+                </h2>
+                <p className="mt-1 max-w-[860px] text-[13px] font-semibold leading-5 text-[#9c998f] max-sm:hidden">
+                  {shorten(event.description, 92)}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </section>
+    </article>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function ReviewPage({
   index,
   issue,
@@ -656,6 +720,68 @@ function AmbientLines() {
   );
 }
 
+const openingEventSpecs = [
+  {
+    impactLabel: "정치개혁",
+    match: ["2026 지방선거제도 개정 합의"],
+    title: "지방선거제도 개정과 정치개혁 요구",
+  },
+  {
+    impactLabel: "선거관리",
+    match: ["2026-06-03 서울 투표지 개표 오류"],
+    title: "6·3 지방선거 관리 부실과 선관위 책임론",
+  },
+  {
+    impactLabel: "노동안전",
+    match: ["김충현 노동자 사망 1주기"],
+    title: "김충현 노동자 사망 1주기와 발전소 직접고용 요구",
+  },
+  {
+    impactLabel: "집단해고",
+    match: ["한국지엠-우진물류"],
+    title: "한국GM 세종물류센터 120명 집단해고",
+  },
+  {
+    impactLabel: "공공안전",
+    match: ["2026-04-20 경남 진주 CU 물류센터"],
+    title: "경남 진주 CU 물류센터 화물노동자 사망",
+  },
+  {
+    impactLabel: "장애인권",
+    match: ["인천 색동원 집단 성폭력 사건"],
+    title: "인천 색동원 집단 성폭력 사건",
+  },
+  {
+    impactLabel: "반전평화",
+    match: ["호르무즈 해협 군사작전 참여 반대"],
+    title: "호르무즈 해협 군사작전 참여 반대",
+  },
+  {
+    impactLabel: "팔레스타인",
+    match: ["구호선 '키리아코스 X'"],
+    title: "가자 구호선 나포와 한국 활동가 억류",
+  },
+  {
+    impactLabel: "평등",
+    match: ["오세훈 시장 발언"],
+    title: "성소수자·장애인 차별 발언과 평등 요구",
+  },
+  {
+    impactLabel: "기후·핵발전",
+    match: ["후쿠시마 핵발전소 폭발 사고"],
+    title: "후쿠시마 15주기와 신규핵발전 논란",
+  },
+  {
+    impactLabel: "주거권",
+    match: ["용산국제업무지구 개발 계획 철회"],
+    title: "용산국제업무지구와 서울 개발 공약",
+  },
+] satisfies Array<{
+  impactLabel: string;
+  match: string[];
+  title: string;
+}>;
+
 function buildStorySlides(agenda: PublicAgenda): StorySlide[] {
   const slides: StorySlide[] = [{ kind: "agenda-intro", agenda }];
 
@@ -673,16 +799,43 @@ function buildStorySlides(agenda: PublicAgenda): StorySlide[] {
   return slides;
 }
 
-function pickReviewIssues(issues: FeaturedIssue[]) {
-  const byAgenda = new Map<string, FeaturedIssue>();
-  const seenTitles = new Set<string>();
-  for (const issue of issues) {
-    const titleKey = issue.title.replace(/\s+/g, " ").trim();
-    if (seenTitles.has(titleKey)) continue;
-    seenTitles.add(titleKey);
-    if (!byAgenda.has(issue.agendaId)) byAgenda.set(issue.agendaId, issue);
+function pickOpeningEvents(data: PublicAgendaData): OpeningEvent[] {
+  const indexedIssues: Array<{
+    agenda: PublicAgenda;
+    issue: PublicIssue;
+    phase: PublicAgendaPhase;
+  }> = [];
+
+  for (const agenda of data.agendas) {
+    for (const phase of agenda.phases) {
+      for (const issue of phase.issues) {
+        indexedIssues.push({ agenda, issue, phase });
+      }
+    }
   }
-  return [...byAgenda.values()].slice(0, reviewSlideCount);
+
+  const usedIssueIds = new Set<string>();
+  return openingEventSpecs
+    .map((spec) => {
+      const match = indexedIssues.find(({ issue }) => {
+        if (usedIssueIds.has(issue.id)) return false;
+        return spec.match.some((needle) => issue.title.includes(needle));
+      });
+
+      if (!match) return null;
+      usedIssueIds.add(match.issue.id);
+
+      return {
+        accent: match.agenda.accent,
+        agendaTitle: match.agenda.title,
+        dateLabel: match.issue.dateLabel,
+        description: match.issue.leadSentence,
+        impactLabel: spec.impactLabel,
+        phaseTitle: match.phase.title,
+        title: spec.title,
+      };
+    })
+    .filter((event): event is OpeningEvent => event !== null);
 }
 
 function getProgress(
