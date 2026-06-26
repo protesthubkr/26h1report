@@ -54,6 +54,40 @@ button:disabled {
   animation-duration: 560ms;
 }
 
+.opening-scroll-snap {
+  overscroll-behavior-y: contain;
+  scroll-behavior: smooth;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+}
+
+.opening-scroll-snap::-webkit-scrollbar {
+  display: none;
+}
+
+.opening-snap-card {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.opening-image-placeholder {
+  background:
+    radial-gradient(circle at 26% 22%, color-mix(in srgb, var(--event-accent) 34%, transparent), transparent 32%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 42%),
+    #141411;
+}
+
+.opening-image-placeholder::after {
+  background: color-mix(in srgb, var(--event-accent) 78%, #f5f2e8);
+  bottom: 24px;
+  content: "";
+  height: 10px;
+  opacity: 0.78;
+  position: absolute;
+  right: 24px;
+  width: 34%;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .opening-rise,
   .opening-event-rise {

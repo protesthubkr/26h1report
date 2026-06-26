@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useRef, useState, type TouchEvent } from "react";
+import { useMemo, useRef, useState, type CSSProperties, type TouchEvent } from "react";
 
 export type PublicAgendaData = {
   agendas: PublicAgenda[];
@@ -242,6 +242,8 @@ export function AgendaReport({ data }: { data: PublicAgendaData }) {
   }
 
   function handleTouchEnd(event: TouchEvent<HTMLElement>) {
+    if (state.mode === "review") return;
+
     const start = touchStart.current;
     touchStart.current = null;
     if (!start) return;
@@ -259,16 +261,13 @@ export function AgendaReport({ data }: { data: PublicAgendaData }) {
     <main className="h-screen overflow-hidden bg-[#070707] text-[#f1f0e8]">
       <TopBar progress={progress} />
       <section className="relative mx-auto flex h-[calc(100vh-56px)] max-w-[1600px] flex-col px-8 py-6 max-sm:h-[calc(100svh-48px)] max-sm:px-3 max-sm:py-3">
-        <ProgressRule progress={progress.percent} />
-
         <div
-          className="relative flex min-h-0 flex-1 items-stretch border border-[#2a2a25] bg-[#0b0b0a]"
+          className="relative flex min-h-0 flex-1 items-stretch overflow-hidden bg-[#090908]"
           onTouchEnd={handleTouchEnd}
           onTouchStart={handleTouchStart}
         >
-          <AmbientLines />
           {state.mode === "review" ? (
-            <OpeningReviewPage events={openingEvents} />
+            <OpeningCardScrollPage events={openingEvents} onNext={goNext} />
           ) : null}
 
           {state.mode === "agenda-select" ? (
@@ -278,14 +277,16 @@ export function AgendaReport({ data }: { data: PublicAgendaData }) {
           {state.mode === "story" && storySlide ? <StoryPage slide={storySlide} /> : null}
         </div>
 
-        <BottomControls
-          canGoBack={canGoBack}
-          canGoNext={canGoNext}
-          mode={state.mode}
-          onBack={goBack}
-          onNext={goNext}
-          progressLabel={progress.label}
-        />
+        {state.mode !== "review" ? (
+          <BottomControls
+            canGoBack={canGoBack}
+            canGoNext={canGoNext}
+            mode={state.mode}
+            onBack={goBack}
+            onNext={goNext}
+            progressLabel={progress.label}
+          />
+        ) : null}
       </section>
     </main>
   );
@@ -293,40 +294,102 @@ export function AgendaReport({ data }: { data: PublicAgendaData }) {
 
 function TopBar({ progress }: { progress: { label: string } }) {
   return (
-    <header className="relative z-20 h-14 border-b border-[#272722] bg-[#070707] px-5 max-sm:h-12 max-sm:px-3">
+    <header className="relative z-20 h-14 bg-[#070707] px-5 max-sm:h-12 max-sm:px-3">
       <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between gap-4">
         <Link className="text-[14px] font-black tracking-normal text-[#f1f0e8] max-sm:text-[13px]" href="/agenda-2026-h1">
           2026 H1 Agenda Report
         </Link>
-        <div className="flex items-center gap-4">
-          <span className="hidden font-mono text-[11px] font-bold text-[#8d8d82] sm:block">
-            {progress.label}
-          </span>
-          <nav className="flex items-center gap-2 text-[11px] font-bold max-sm:hidden">
-            <Link className="border border-[#393932] px-3 py-2 text-[#d8d7ce]" href="/observatory">
-              Observatory
-            </Link>
-            <Link className="border border-[#393932] px-3 py-2 text-[#d8d7ce]" href="/g6">
-              Graph
-            </Link>
-          </nav>
-        </div>
+        <span className="hidden font-mono text-[11px] font-bold text-[#8d8d82] sm:block">
+          {progress.label}
+        </span>
       </div>
     </header>
   );
 }
 
-function ProgressRule({ progress }: { progress: number }) {
+function OpeningCardScrollPage({
+  events,
+  onNext,
+}: {
+  events: OpeningEvent[];
+  onNext: () => void;
+}) {
   return (
-    <div className="mb-4 h-px bg-[#25251f]">
-      <div
-        className="h-px bg-[#e6e1d4] transition-[width] duration-500"
-        style={{ width: `${Math.round(progress * 100)}%` }}
-      />
-    </div>
+    <article className="relative h-full w-full overflow-hidden bg-black">
+      <div className="opening-scroll-snap h-full overflow-y-auto">
+        <section className="opening-snap-card flex min-h-full flex-col justify-between px-12 py-14 max-sm:px-5 max-sm:py-8">
+          <div className="opening-rise max-w-[1120px]">
+            <h1 className="max-w-[980px] text-[clamp(42px,7vw,104px)] font-black leading-[0.98] tracking-normal text-[#f8f5ec] max-sm:text-[38px]">
+              다사다난했던 2026년 상반기,
+              <br />
+              안녕하셨나요?
+            </h1>
+          </div>
+          <div className="max-w-[720px]">
+            <SmallMeta>상반기 주요 사건</SmallMeta>
+            <p className="mt-5 text-[clamp(18px,2vw,30px)] font-bold leading-[1.5] text-[#d8d3c7] max-sm:text-[19px] max-sm:leading-8">
+              한 장씩 내려가며, 올해 상반기를 흔든 장면들을 먼저 훑어봅니다.
+            </p>
+          </div>
+        </section>
+
+        {events.map((event, index) => (
+          <section
+            className="opening-snap-card grid min-h-full grid-cols-[minmax(280px,0.86fr)_minmax(0,1fr)] gap-10 px-12 py-10 max-lg:grid-cols-1 max-lg:gap-7 max-sm:px-5 max-sm:py-6"
+            key={`${event.title}-${index}`}
+          >
+            <div
+              className="opening-image-placeholder relative min-h-[420px] overflow-hidden bg-[#141411] max-lg:min-h-[260px] max-sm:min-h-[220px]"
+              style={{ "--event-accent": event.accent } as CSSProperties}
+            >
+              <span className="absolute left-6 top-6 font-mono text-[11px] font-black uppercase tracking-[0.16em] text-[#77746a]">
+                image placeholder
+              </span>
+              <span className="absolute bottom-6 left-6 font-mono text-[12px] font-black text-[#aaa69a]">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+            </div>
+
+            <div className="flex min-h-0 flex-col justify-center">
+              <SmallMeta>
+                {event.dateLabel} · {event.impactLabel}
+              </SmallMeta>
+              <h2 className="mt-8 max-w-[920px] text-[clamp(34px,5vw,76px)] font-black leading-[1.03] tracking-normal text-[#f5f2e8] max-sm:mt-6 max-sm:text-[32px]">
+                {event.title}
+              </h2>
+              <p className="mt-8 max-w-[760px] text-[clamp(17px,1.8vw,26px)] font-bold leading-[1.58] text-[#d7d1c5] max-sm:mt-6 max-sm:text-[18px] max-sm:leading-8">
+                {shorten(event.description, 140)}
+              </p>
+              <p className="mt-9 max-w-[720px] text-[13px] font-bold leading-6 text-[#7e7a70]">
+                {event.agendaTitle} · {event.phaseTitle}
+              </p>
+            </div>
+          </section>
+        ))}
+
+        <section className="opening-snap-card flex min-h-full flex-col justify-center px-12 py-14 max-sm:px-5 max-sm:py-8">
+          <div className="max-w-[980px]">
+            <h2 className="text-[clamp(42px,7vw,104px)] font-black leading-[0.98] tracking-normal text-[#f8f5ec] max-sm:text-[38px]">
+              좀더 들여다볼까요?
+            </h2>
+            <p className="mt-8 max-w-[720px] text-[clamp(18px,2vw,28px)] font-bold leading-[1.55] text-[#d8d3c7] max-sm:text-[19px] max-sm:leading-8">
+              이제 이 사건들이 어떤 어젠다의 흐름으로 이어졌는지 골라볼 차례입니다.
+            </p>
+            <button
+              className="mt-12 bg-[#e6e1d4] px-7 py-4 text-[15px] font-black text-[#080808] transition hover:bg-[#f4efe3] max-sm:min-h-14 max-sm:w-full"
+              onClick={onNext}
+              type="button"
+            >
+              다음으로
+            </button>
+          </div>
+        </section>
+      </div>
+    </article>
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function OpeningReviewPage({ events }: { events: OpeningEvent[] }) {
   return (
     <article className="relative flex min-h-[680px] w-full flex-col justify-between overflow-hidden bg-black p-12 max-sm:min-h-0 max-sm:p-5">
@@ -707,6 +770,7 @@ function SmallMeta({ children }: { children: React.ReactNode }) {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function AmbientLines() {
   return (
     <div
