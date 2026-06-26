@@ -1,7 +1,15 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useRef, useState, type CSSProperties, type TouchEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type TouchEvent,
+} from "react";
 
 export type PublicAgendaData = {
   agendas: PublicAgenda[];
@@ -77,14 +85,27 @@ type FeaturedIssue = PublicIssue & {
   phaseTitle: string;
 };
 
-type OpeningEvent = {
+type OpeningSource = {
+  label: string;
+  url: string;
+};
+
+type OpeningCard = {
   accent: string;
-  agendaTitle: string;
   dateLabel: string;
-  description: string;
-  impactLabel: string;
-  phaseTitle: string;
+  imageSrc?: string;
+  imageLabel?: string;
+  kind?: "intro" | "section" | "story" | "closing";
+  lines: string[];
+  mediaKind?: "youtube";
+  sources?: OpeningSource[];
   title: string;
+};
+
+type OpeningAgendaChoice = {
+  agendaId: string;
+  imageSrc: string;
+  label: string;
 };
 
 type PublicStatement = {
@@ -156,7 +177,6 @@ const reviewSlideCount = 1;
 const maxIssueSlidesPerPhase = 4;
 
 export function AgendaReport({ data }: { data: PublicAgendaData }) {
-  const openingEvents = useMemo(() => pickOpeningEvents(data), [data]);
   const [state, setState] = useState<ReaderState>({
     mode: "review",
     reviewIndex: 0,
@@ -267,7 +287,11 @@ export function AgendaReport({ data }: { data: PublicAgendaData }) {
           onTouchStart={handleTouchStart}
         >
           {state.mode === "review" ? (
-            <OpeningCardScrollPage events={openingEvents} onNext={goNext} />
+            <OpeningCardScrollPage
+              agendas={data.agendas}
+              cards={openingStoryCards}
+              onSelectAgenda={selectAgenda}
+            />
           ) : null}
 
           {state.mode === "agenda-select" ? (
@@ -308,186 +332,310 @@ function TopBar({ progress }: { progress: { label: string } }) {
 }
 
 function OpeningCardScrollPage({
-  events,
-  onNext,
+  agendas,
+  cards,
+  onSelectAgenda,
 }: {
-  events: OpeningEvent[];
-  onNext: () => void;
+  agendas: PublicAgenda[];
+  cards: OpeningCard[];
+  onSelectAgenda: (agenda: PublicAgenda) => void;
 }) {
   return (
     <article className="relative h-full w-full overflow-hidden bg-black">
       <div className="opening-scroll-snap h-full overflow-y-auto">
-        <section className="opening-snap-card flex min-h-full flex-col justify-between px-12 py-14 max-sm:px-5 max-sm:py-8">
-          <div className="opening-rise max-w-[1120px]">
-            <h1 className="max-w-[980px] text-[clamp(42px,7vw,104px)] font-black leading-[0.98] tracking-normal text-[#f8f5ec] max-sm:text-[38px]">
-              다사다난했던 2026년 상반기,
-              <br />
-              안녕하셨나요?
-            </h1>
-          </div>
-          <div className="max-w-[720px]">
-            <SmallMeta>상반기 주요 사건</SmallMeta>
-            <p className="mt-5 text-[clamp(18px,2vw,30px)] font-bold leading-[1.5] text-[#d8d3c7] max-sm:text-[19px] max-sm:leading-8">
-              한 장씩 내려가며, 올해 상반기를 흔든 장면들을 먼저 훑어봅니다.
-            </p>
-          </div>
-        </section>
-
-        {events.map((event, index) => (
-          <section
-            className="opening-snap-card grid min-h-full grid-cols-[minmax(280px,0.86fr)_minmax(0,1fr)] gap-10 px-12 py-10 max-lg:grid-cols-1 max-lg:gap-7 max-sm:px-5 max-sm:py-6"
-            key={`${event.title}-${index}`}
-          >
-            <div
-              className="opening-image-placeholder relative min-h-[420px] overflow-hidden bg-[#141411] max-lg:min-h-[260px] max-sm:min-h-[220px]"
-              style={{ "--event-accent": event.accent } as CSSProperties}
-            >
-              <span className="absolute left-6 top-6 font-mono text-[11px] font-black uppercase tracking-[0.16em] text-[#77746a]">
-                image placeholder
-              </span>
-              <span className="absolute bottom-6 left-6 font-mono text-[12px] font-black text-[#aaa69a]">
-                {String(index + 1).padStart(2, "0")}
-              </span>
-            </div>
-
-            <div className="flex min-h-0 flex-col justify-center">
-              <SmallMeta>
-                {event.dateLabel} · {event.impactLabel}
-              </SmallMeta>
-              <h2 className="mt-8 max-w-[920px] text-[clamp(34px,5vw,76px)] font-black leading-[1.03] tracking-normal text-[#f5f2e8] max-sm:mt-6 max-sm:text-[32px]">
-                {event.title}
-              </h2>
-              <p className="mt-8 max-w-[760px] text-[clamp(17px,1.8vw,26px)] font-bold leading-[1.58] text-[#d7d1c5] max-sm:mt-6 max-sm:text-[18px] max-sm:leading-8">
-                {shorten(event.description, 140)}
-              </p>
-              <p className="mt-9 max-w-[720px] text-[13px] font-bold leading-6 text-[#7e7a70]">
-                {event.agendaTitle} · {event.phaseTitle}
-              </p>
-            </div>
-          </section>
+        {cards.map((card, index) => (
+          <OpeningScrollCard
+            agendas={agendas}
+            card={card}
+            index={index}
+            key={`${card.title}-${index}`}
+            onSelectAgenda={onSelectAgenda}
+          />
         ))}
+      </div>
+    </article>
+  );
+}
 
-        <section className="opening-snap-card flex min-h-full flex-col justify-center px-12 py-14 max-sm:px-5 max-sm:py-8">
-          <div className="max-w-[980px]">
-            <h2 className="text-[clamp(42px,7vw,104px)] font-black leading-[0.98] tracking-normal text-[#f8f5ec] max-sm:text-[38px]">
-              좀더 들여다볼까요?
-            </h2>
-            <p className="mt-8 max-w-[720px] text-[clamp(18px,2vw,28px)] font-bold leading-[1.55] text-[#d8d3c7] max-sm:text-[19px] max-sm:leading-8">
-              이제 이 사건들이 어떤 어젠다의 흐름으로 이어졌는지 골라볼 차례입니다.
-            </p>
+function OpeningScrollCard({
+  agendas,
+  card,
+  index,
+  onSelectAgenda,
+}: {
+  agendas: PublicAgenda[];
+  card: OpeningCard;
+  index: number;
+  onSelectAgenda: (agenda: PublicAgenda) => void;
+}) {
+  const cardRef = useRef<HTMLElement | null>(null);
+  const [isVisible, setIsVisible] = useState(index === 0);
+
+  useEffect(() => {
+    const element = cardRef.current;
+    if (!element || isVisible) return;
+    const scrollRoot = element.closest(".opening-scroll-snap");
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { root: scrollRoot, threshold: 0.42 },
+    );
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [isVisible]);
+
+  return (
+    <section
+      className={getOpeningCardClassName(card)}
+      data-visible={isVisible ? "true" : "false"}
+      ref={cardRef}
+      style={{ "--event-accent": card.accent } as CSSProperties}
+    >
+      {card.kind === "closing" ? (
+        <OpeningClosingBridge
+          agendas={agendas}
+          card={card}
+          onSelectAgenda={onSelectAgenda}
+        />
+      ) : (
+        <>
+          {hasOpeningVisual(card) ? <OpeningVisual card={card} index={index} /> : null}
+
+          <div className={getOpeningCopyClassName(card)}>
+            <div className="opening-card-content">
+              {card.kind === "story" ? (
+                <OpeningLines lines={card.lines} variant="story" />
+              ) : (
+                <>
+                  <h1 className={getOpeningTitleClassName(card)}>
+                    <OpeningTitleText title={card.title} />
+                  </h1>
+                  <OpeningLines lines={card.lines} />
+                </>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function OpeningClosingBridge({
+  agendas,
+  card,
+  onSelectAgenda,
+}: {
+  agendas: PublicAgenda[];
+  card: OpeningCard;
+  onSelectAgenda: (agenda: PublicAgenda) => void;
+}) {
+  const choices = closingAgendaChoices
+    .map((choice) => ({
+      ...choice,
+      agenda: agendas.find((agenda) => agenda.id === choice.agendaId),
+    }))
+    .filter(
+      (choice): choice is OpeningAgendaChoice & { agenda: PublicAgenda } =>
+        Boolean(choice.agenda),
+    );
+
+  return (
+    <div className="opening-closing-shell relative flex min-h-full w-full items-center justify-center">
+      <p className="opening-closing-copy absolute inset-x-0 mx-auto max-w-[760px] break-keep px-4 text-center text-[clamp(22px,3.4vw,46px)] font-black leading-[1.35] text-[#f6f2e8] max-sm:text-[24px]">
+        {card.lines.map((line, index) => (
+          <span className="block" key={`${line}-${index}`}>
+            {line}
+          </span>
+        ))}
+      </p>
+
+      <div className="opening-choice-panel flex w-full max-w-[1180px] flex-col gap-7 max-sm:gap-4">
+        <div className="opening-choice-header text-right text-[clamp(24px,3vw,48px)] font-black leading-none text-[#f6f2e8] max-sm:text-[23px]">
+          희망은 어디에 있을까요?
+        </div>
+
+        <div className="opening-choice-grid grid w-full grid-cols-2 grid-rows-3 gap-4 max-sm:h-[68svh] max-sm:gap-2 sm:h-[min(66vh,640px)]">
+          {choices.map((choice) => (
             <button
-              className="mt-12 bg-[#e6e1d4] px-7 py-4 text-[15px] font-black text-[#080808] transition hover:bg-[#f4efe3] max-sm:min-h-14 max-sm:w-full"
-              onClick={onNext}
+              className="group relative min-h-0 overflow-hidden bg-[#111] text-left"
+              key={`${choice.agendaId}-${choice.label}`}
+              onClick={() => onSelectAgenda(choice.agenda)}
               type="button"
             >
-              다음으로
-            </button>
-          </div>
-        </section>
-      </div>
-    </article>
-  );
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function OpeningReviewPage({ events }: { events: OpeningEvent[] }) {
-  return (
-    <article className="relative flex min-h-[680px] w-full flex-col justify-between overflow-hidden bg-black p-12 max-sm:min-h-0 max-sm:p-5">
-      <div className="opening-rise max-w-[1120px]">
-        <h1 className="max-w-[980px] text-[clamp(42px,7vw,104px)] font-black leading-[0.98] tracking-normal text-[#f8f5ec] max-sm:text-[38px]">
-          다사다난했던 2026년 상반기,
-          <br />
-          안녕하셨나요?
-        </h1>
-      </div>
-
-      <section className="mt-10 min-h-0 max-sm:mt-6">
-        <div className="mb-4 flex items-end justify-between gap-6 max-sm:mb-3">
-          <SmallMeta>상반기 주요 사건</SmallMeta>
-          <span className="font-mono text-[11px] font-black text-[#6e6b62]">
-            임팩트 순
-          </span>
-        </div>
-
-        <ol className="max-h-[43vh] overflow-y-auto border-t border-[#292722] max-sm:max-h-[49svh]">
-          {events.map((event, index) => (
-            <li
-              className="opening-event-rise grid grid-cols-[56px_minmax(0,150px)_minmax(0,1fr)] items-start gap-4 border-b border-[#24231f] py-3 opacity-0 max-md:grid-cols-[44px_minmax(0,1fr)] max-sm:gap-3 max-sm:py-3"
-              key={`${event.title}-${index}`}
-              style={{ animationDelay: `${720 + index * 115}ms` }}
-            >
-              <span className="font-mono text-[12px] font-black text-[#77746a]">
-                {String(index + 1).padStart(2, "0")}
+              <Image
+                alt={choice.label}
+                className="object-cover transition duration-500 group-hover:scale-[1.025]"
+                fill
+                sizes="(max-width: 768px) 50vw, 42vw"
+                src={choice.imageSrc}
+                unoptimized
+              />
+              <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/82 via-black/48 to-transparent px-4 pb-4 pt-12 text-right text-[clamp(13px,1.3vw,19px)] font-black leading-none text-[#f7f2e8] max-sm:px-2.5 max-sm:pb-2.5 max-sm:pt-8 max-sm:text-[12px]">
+                <span className="block truncate">{choice.label}</span>
               </span>
-              <div className="max-md:order-3 max-md:col-span-2 max-md:ml-[56px] max-sm:ml-[44px]">
-                <span
-                  className="mb-2 block h-[3px] w-9"
-                  style={{ backgroundColor: event.accent }}
-                />
-                <p className="text-[12px] font-black leading-5 text-[#9b978d]">
-                  {event.dateLabel} · {event.impactLabel}
-                </p>
-              </div>
-              <div className="min-w-0">
-                <h2 className="text-[19px] font-black leading-snug text-[#f5f2e8] max-sm:text-[17px]">
-                  {event.title}
-                </h2>
-                <p className="mt-1 max-w-[860px] text-[13px] font-semibold leading-5 text-[#9c998f] max-sm:hidden">
-                  {shorten(event.description, 92)}
-                </p>
-              </div>
-            </li>
+            </button>
           ))}
-        </ol>
-      </section>
-    </article>
+        </div>
+      </div>
+    </div>
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function ReviewPage({
-  index,
-  issue,
-  total,
-}: {
-  index: number;
-  issue: FeaturedIssue;
-  total: number;
-}) {
+function OpeningVisual({ card, index }: { card: OpeningCard; index: number }) {
+  const youtubeEmbedUrl = getYouTubeEmbedUrl(card);
+
   return (
-    <article className="relative grid min-h-[680px] w-full grid-cols-[minmax(0,1fr)_320px] max-lg:grid-cols-1 max-sm:min-h-0">
-      <section className="flex min-h-0 flex-col justify-between p-12 max-lg:min-h-[620px] max-sm:min-h-0 max-sm:p-5">
-        <div>
-          <SmallMeta>
-            회고 {String(index + 1).padStart(2, "0")} / {String(total).padStart(2, "0")}
-          </SmallMeta>
-          <h1 className="mt-10 max-w-[980px] text-[clamp(30px,4.2vw,62px)] font-black leading-[1.07] tracking-normal text-[#f5f2e8] max-sm:mt-7 max-sm:text-[30px]">
-            {shorten(issue.title, 34)}
-          </h1>
-        </div>
-
-        <div className="max-w-[860px]">
-          <p className="border-l-4 border-[#d8d0bd] pl-6 text-[clamp(18px,2vw,28px)] font-bold leading-[1.55] text-[#ece8dd] max-sm:pl-4 max-sm:text-[18px] max-sm:leading-8">
-            {shorten(issue.leadSentence, 68)}
-          </p>
-        </div>
-      </section>
-
-      <aside className="flex flex-col justify-between border-l border-[#2a2a25] p-8 max-lg:border-l-0 max-lg:border-t max-md:hidden max-sm:p-6">
-        <div>
-          <SmallMeta>{issue.dateLabel}</SmallMeta>
-          <p className="mt-5 text-[18px] font-black text-[#f5f2e8]">{issue.actionType}</p>
-          <p className="mt-3 text-[14px] leading-6 text-[#a9a79c]">
-            {issue.agendaTitle}
-          </p>
-        </div>
-        <p className="mt-12 text-[13px] leading-6 text-[#858379]">
-          먼저 사건을 한 장씩 봅니다. 선택은 아직 없습니다. 다음 장면에서만
-          어젠다를 고릅니다.
-        </p>
-      </aside>
-    </article>
+    <figure>
+      {card.imageSrc ? (
+        <Image
+          alt={card.imageLabel ?? card.title}
+          className="h-auto max-h-[72vh] w-full object-contain"
+          height={820}
+          priority={index <= 2}
+          sizes="(max-width: 1024px) 100vw, 56vw"
+          src={card.imageSrc}
+          unoptimized
+          width={1200}
+        />
+      ) : youtubeEmbedUrl ? (
+        <iframe
+          allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          className="mx-auto aspect-[9/16] h-[78vh] max-h-[720px] w-auto max-w-full bg-black max-sm:h-[58svh]"
+          src={youtubeEmbedUrl}
+          title={card.imageLabel ?? card.title}
+        />
+      ) : null}
+      {card.sources?.length ? <OpeningSourceLinks sources={card.sources} /> : null}
+    </figure>
   );
+}
+
+function OpeningLines({
+  lines,
+  variant = "body",
+}: {
+  lines: string[];
+  variant?: "body" | "story";
+}) {
+  if (!lines.length) return null;
+
+  const className =
+    variant === "story"
+      ? "max-w-[860px] break-keep font-black leading-[1.12] text-[#f5f2e8]"
+      : "mt-8 max-w-[760px] break-keep text-[clamp(17px,1.8vw,26px)] font-bold leading-[1.58] text-[#d7d1c5] max-sm:mt-6 max-sm:text-[18px] max-sm:leading-8";
+  const nonEmptyLines = lines.filter(Boolean);
+
+  return (
+    <p className={className}>
+      {lines.map((line, index) => {
+        if (!line) {
+          return <span aria-hidden="true" className="block h-5" key={`space-${index}`} />;
+        }
+
+        const position = lines.slice(0, index + 1).filter(Boolean).length - 1;
+        return (
+          <span
+            className={getOpeningLineClassName(variant, position, nonEmptyLines.length)}
+            key={`${line}-${index}`}
+          >
+            {line}
+          </span>
+        );
+      })}
+    </p>
+  );
+}
+
+function getOpeningLineClassName(
+  variant: "body" | "story",
+  index: number,
+  total: number,
+) {
+  if (variant === "body") return "block";
+  const marginClass = total > 1 && index > 0 ? "mt-2" : "";
+  return `${marginClass} block text-[clamp(17px,1.45vw,24px)] leading-[1.74] text-[#e6e1d6] max-sm:text-[18px]`;
+}
+
+function OpeningTitleText({ title }: { title: string }) {
+  return title.split("\n").map((line, index) => (
+    <span className="block" key={`${line}-${index}`}>
+      {line}
+    </span>
+  ));
+}
+
+function OpeningSourceLinks({ sources }: { sources: OpeningSource[] }) {
+  return (
+    <figcaption className="mt-3 flex flex-wrap justify-end gap-x-2 gap-y-1 text-right font-mono text-[11px] font-black text-[#858176]">
+      <span>출처</span>
+      {sources.map((source, index) => (
+        <span key={`${source.label}-${source.url}`}>
+          <a
+            className="text-[#a8a397] underline-offset-4 transition hover:text-[#f1f0e8] hover:underline"
+            href={source.url}
+            rel="noreferrer"
+            target="_blank"
+          >
+            {source.label}
+          </a>
+          {index < sources.length - 1 ? <span className="ml-2 text-[#555147]">·</span> : null}
+        </span>
+      ))}
+    </figcaption>
+  );
+}
+
+function getOpeningCardClassName(card: OpeningCard) {
+  if (card.kind === "closing") {
+    return "opening-snap-card flex min-h-full items-center justify-center px-8 py-8 max-sm:px-3 max-sm:py-3";
+  }
+  if (card.kind === "story" && hasOpeningVisual(card)) {
+    return "opening-snap-card grid min-h-full grid-cols-[minmax(420px,1.18fr)_minmax(0,0.82fr)] gap-12 px-12 py-10 max-lg:grid-cols-1 max-lg:gap-7 max-sm:px-5 max-sm:py-6";
+  }
+  if (card.kind === "story") {
+    return "opening-snap-card flex min-h-full flex-col justify-center px-12 py-14 max-sm:px-5 max-sm:py-8";
+  }
+  return "opening-snap-card flex min-h-full flex-col justify-center px-12 py-14 max-sm:px-5 max-sm:py-8";
+}
+
+function getOpeningCopyClassName(card: OpeningCard) {
+  if (card.kind === "story" && hasOpeningVisual(card)) return "flex min-h-0 flex-col justify-center";
+  return "max-w-[980px]";
+}
+
+function hasOpeningVisual(card: OpeningCard) {
+  return Boolean(card.imageSrc || card.mediaKind === "youtube");
+}
+
+function getYouTubeEmbedUrl(card: OpeningCard) {
+  if (card.mediaKind !== "youtube") return null;
+
+  const sourceUrl = card.sources?.find((source) => source.label === "YouTube")?.url;
+  const videoId = sourceUrl?.match(/(?:shorts\/|watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/)?.[1];
+  return videoId
+    ? `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1&playsinline=1&controls=0&fs=0&iv_load_policy=3&disablekb=1`
+    : null;
+}
+
+
+function getOpeningTitleClassName(card: OpeningCard) {
+  if (card.kind === "intro") {
+    return "mt-8 max-w-[900px] break-keep text-[clamp(34px,5.4vw,78px)] font-black leading-[1.03] tracking-normal text-[#f8f5ec] max-sm:text-[32px]";
+  }
+  if (card.kind === "closing") {
+    return "mt-8 max-w-[980px] break-keep text-[clamp(42px,7vw,104px)] font-black leading-[0.98] tracking-normal text-[#f8f5ec] max-sm:text-[38px]";
+  }
+  if (card.kind === "section") {
+    return "mt-8 max-w-[920px] break-keep text-[clamp(38px,6vw,86px)] font-black leading-[1.02] tracking-normal text-[#f5f2e8] max-sm:text-[34px]";
+  }
+  return "mt-8 max-w-[920px] break-keep text-[clamp(32px,4.35vw,66px)] font-black leading-[1.04] tracking-normal text-[#f5f2e8] max-sm:mt-6 max-sm:text-[32px]";
 }
 
 function AgendaSelectPage({
@@ -784,67 +932,346 @@ function AmbientLines() {
   );
 }
 
-const openingEventSpecs = [
+const closingAgendaChoices: OpeningAgendaChoice[] = [
   {
-    impactLabel: "정치개혁",
-    match: ["2026 지방선거제도 개정 합의"],
-    title: "지방선거제도 개정과 정치개혁 요구",
+    agendaId: "election-democracy",
+    imageSrc: "/oh-win.jpg",
+    label: "선거와 민주주의",
   },
   {
-    impactLabel: "선거관리",
-    match: ["2026-06-03 서울 투표지 개표 오류"],
-    title: "6·3 지방선거 관리 부실과 선관위 책임론",
+    agendaId: "disability-rights",
+    imageSrc: "/junjang.jpg",
+    label: "왜 그들은 열차를 세웠을까",
   },
   {
-    impactLabel: "노동안전",
-    match: ["김충현 노동자 사망 1주기"],
-    title: "김충현 노동자 사망 1주기와 발전소 직접고용 요구",
+    agendaId: "rights-equality",
+    imageSrc: "/queer.jpg",
+    label: "서울시청과 퀴어퍼레이드",
   },
   {
-    impactLabel: "집단해고",
-    match: ["한국지엠-우진물류"],
-    title: "한국GM 세종물류센터 120명 집단해고",
+    agendaId: "labor-safety",
+    imageSrc: "/coupang.jpg",
+    label: "일하다 죽지 않을 권리",
   },
   {
-    impactLabel: "공공안전",
-    match: ["2026-04-20 경남 진주 CU 물류센터"],
-    title: "경남 진주 CU 물류센터 화물노동자 사망",
+    agendaId: "rights-equality",
+    imageSrc: "/jang.jpg",
+    label: "젠더 폭력",
   },
   {
-    impactLabel: "장애인권",
-    match: ["인천 색동원 집단 성폭력 사건"],
-    title: "인천 색동원 집단 성폭력 사건",
+    agendaId: "peace-palestine",
+    imageSrc: "/haecho.webp",
+    label: "전쟁과 평화: 해초의 여권",
+  },
+];
+
+const openingStoryCards: OpeningCard[] = [
+  {
+    accent: "#f1f0e8",
+    dateLabel: "상반기 회고",
+    kind: "intro",
+    lines: [
+      "벌써 7월이네요.",
+      "2026년 상반기는 참 다사다난했습니다.",
+      "",
+      "상반기에는 어떤 일이 있었는지",
+      "한번 돌아볼까요?",
+    ],
+    title: "다사다난했던 2026년 상반기,\n안녕하셨나요?",
   },
   {
-    impactLabel: "반전평화",
-    match: ["호르무즈 해협 군사작전 참여 반대"],
-    title: "호르무즈 해협 군사작전 참여 반대",
+    accent: "#c8b27a",
+    dateLabel: "6월 3일",
+    imageLabel: "오세훈 당선 사진",
+    imageSrc: "/oh-win.jpg",
+    kind: "story",
+    lines: ["오세훈 시장님, 당선 축하드립니다."],
+    title: "지방선거를 치렀습니다.",
   },
   {
-    impactLabel: "팔레스타인",
-    match: ["구호선 '키리아코스 X'"],
-    title: "가자 구호선 나포와 한국 활동가 억류",
+    accent: "#c8b27a",
+    dateLabel: "지방선거",
+    imageLabel: '오세훈 "정원오 토론하자"',
+    imageSrc: "/oh-debate.png",
+    kind: "story",
+    lines: ["참 조용한 선거였네요."],
+    sources: [
+      {
+        label: "KBS",
+        url: "https://news.kbs.co.kr/news/pc/view/view.do?ncd=8561049",
+      },
+    ],
+    title: "조용한 선거",
   },
   {
-    impactLabel: "평등",
-    match: ["오세훈 시장 발언"],
-    title: "성소수자·장애인 차별 발언과 평등 요구",
+    accent: "#c8b27a",
+    dateLabel: "지방선거",
+    imageLabel: "서울시장 후보 TV토론",
+    kind: "story",
+    lines: [
+      "TV토론이 한 번밖에 없어서 좀 아쉽긴 했지만, 어쩌겠습니까.",
+      "앞으로 4년간 잘 부탁드립니다.",
+    ],
+    sources: [
+      {
+        label: "연합뉴스",
+        url: "https://www.yna.co.kr/view/PYH20260528238300013",
+      },
+      {
+        label: "서울신문",
+        url: "https://m.go.seoul.co.kr/news/politics/presidential-election-2025/2025/05/20/20250520006005?cp=go",
+      },
+    ],
+    title: "한 번의 토론",
   },
   {
-    impactLabel: "기후·핵발전",
-    match: ["후쿠시마 핵발전소 폭발 사고"],
-    title: "후쿠시마 15주기와 신규핵발전 논란",
+    accent: "#a7b0ff",
+    dateLabel: "지방선거 이후",
+    imageLabel: "서울광장 퀴어퍼레이드 관련 발언",
+    kind: "story",
+    lines: ["당분간 서울광장에서 열리는 퀴어퍼레이드,"],
+    mediaKind: "youtube",
+    sources: [
+      {
+        label: "YouTube",
+        url: "https://youtube.com/shorts/5Fx6ewt3UXE?si=yMbU8nhOJwTXSCZS",
+      },
+    ],
+    title: "서울광장",
   },
   {
-    impactLabel: "주거권",
-    match: ["용산국제업무지구 개발 계획 철회"],
-    title: "용산국제업무지구와 서울 개발 공약",
+    accent: "#a7b0ff",
+    dateLabel: "지방선거 이후",
+    imageLabel: "전장연 시위 관련 발언",
+    kind: "story",
+    lines: ["전장연의 시위는 보기 어렵겠네요."],
+    mediaKind: "youtube",
+    sources: [
+      {
+        label: "YouTube",
+        url: "https://youtube.com/shorts/9a6d8xPhl8E?si=6bEyXMyn3qvx4hKS",
+      },
+    ],
+    title: "전장연",
   },
-] satisfies Array<{
-  impactLabel: string;
-  match: string[];
-  title: string;
-}>;
+  {
+    accent: "#b84d47",
+    dateLabel: "노동안전·공공안전",
+    kind: "section",
+    lines: [],
+    title: "비극적인 사고도 많았습니다.",
+  },
+  {
+    accent: "#b84d47",
+    dateLabel: "공공안전",
+    imageLabel: "서울 서소문 고가도로 붕괴사고",
+    imageSrc: "/seosomun.webp",
+    kind: "story",
+    lines: ["서울 서소문 고가도로 붕괴사고로 3명이 세상을 떠나셨고,"],
+    sources: [
+      {
+        label: "한겨레",
+        url: "https://www.hani.co.kr/arti/society/society_general/1260610.html",
+      },
+    ],
+    title: "서소문 붕괴사고",
+  },
+  {
+    accent: "#b84d47",
+    dateLabel: "노동안전",
+    imageLabel: "한화에어로스페이스 폭발사고",
+    imageSrc: "/hanwha.jpg",
+    kind: "story",
+    lines: ["한화에어로스페이스 폭발사고로 5명이 세상을 떠나셨습니다."],
+    sources: [
+      {
+        label: "연합뉴스",
+        url: "https://www.yna.co.kr/view/AKR20260602113251063",
+      },
+    ],
+    title: "한화에어로스페이스",
+  },
+  {
+    accent: "#b84d47",
+    dateLabel: "노동안전",
+    imageLabel: "쿠팡 노동자 사망 관련 보도",
+    imageSrc: "/coupang.jpg",
+    kind: "story",
+    lines: ["쿠팡에서는 26년 상반기 들어 2건의 사망 사건이 있었습니다."],
+    sources: [
+      {
+        label: "매일노동뉴스",
+        url: "https://www.labortoday.co.kr/news/articleView.html?idxno=234105",
+      },
+    ],
+    title: "쿠팡",
+  },
+  {
+    accent: "#d99b50",
+    dateLabel: "산재와 원청 책임",
+    kind: "section",
+    lines: ["산재 사건이 연달아 일어나면서 노동자의 안전에 대한 관심이 쏠렸습니다."],
+    title: "안전의 책임",
+  },
+  {
+    accent: "#d99b50",
+    dateLabel: "원청 교섭",
+    imageLabel: "노란봉투법과 원청 책임",
+    imageSrc: "/nobong.jpg",
+    kind: "story",
+    lines: [
+      "노동 환경의 안전 관리 주체는 누구인가,",
+      "하청업체 직원의 사망에 원청업체도 책임이 있다는 목소리가 커지는 가운데, 노란봉투법의 통과로 원청 교섭의 창구가 열리는 듯합니다.",
+      "",
+      "11년 만에 열린 원청 교섭의 창구는 과연 보다 안전한 근로환경을 만들 수 있을까요?",
+    ],
+    sources: [
+      {
+        label: "우먼타임스",
+        url: "https://www.womentimes.co.kr/news/articleView.html?idxno=58576",
+      },
+    ],
+    title: "노란봉투법",
+  },
+  {
+    accent: "#d99b50",
+    dateLabel: "노란봉투법 이후",
+    imageLabel: "노란봉투법 책임 회피 설명서",
+    kind: "story",
+    lines: [
+      "최근, 경기도는 산하 기관에 '노란봉투법 책임 회피 설명서'를 제작해 뿌렸습니다.",
+      "민주노총은 실질적인 원청 교섭권 행사가 이뤄지지 않고 있다며, 7월 15일 총파업을 예고한 상황입니다.",
+    ],
+    sources: [
+      {
+        label: "민주노총",
+        url: "https://nodong.org/statement/7933755",
+      },
+    ],
+    title: "책임 회피와 총파업",
+  },
+  {
+    accent: "#d97997",
+    dateLabel: "젠더 폭력",
+    kind: "section",
+    lines: [],
+    title: "젠더 폭력은 어땠나요.",
+  },
+  {
+    accent: "#d97997",
+    dateLabel: "젠더 폭력",
+    imageLabel: "광주 장윤기 살인 사건",
+    imageSrc: "/jang.jpg",
+    kind: "story",
+    lines: ["광주 장윤기 살인 사건,"],
+    sources: [
+      {
+        label: "법률신문",
+        url: "https://www.lawtimes.co.kr/news/articleView.html?idxno=221491",
+      },
+    ],
+    title: "광주",
+  },
+  {
+    accent: "#d97997",
+    dateLabel: "젠더 폭력",
+    imageLabel: "남양주 스토킹 살인 사건",
+    kind: "story",
+    lines: ["남양주 스토킹 살인 사건,"],
+    mediaKind: "youtube",
+    sources: [
+      {
+        label: "YouTube",
+        url: "https://www.youtube.com/shorts/boIZOM5Q87Q",
+      },
+    ],
+    title: "남양주",
+  },
+  {
+    accent: "#d97997",
+    dateLabel: "젠더 폭력",
+    imageLabel: "안산 성폭행 고소 피해자 사망 사건",
+    kind: "story",
+    lines: ["안산 성폭행 고소 피해자 사망 사건 등 성폭력 사망 사건이 잇따르는 가운데,"],
+    mediaKind: "youtube",
+    sources: [
+      {
+        label: "YouTube",
+        url: "https://www.youtube.com/shorts/5CKwGI75mZ0",
+      },
+    ],
+    title: "안산",
+  },
+  {
+    accent: "#d97997",
+    dateLabel: "동의 없는 성폭력",
+    imageLabel: "성폭력 재판소원 관련 보도",
+    imageSrc: "/court.jpg",
+    kind: "story",
+    lines: ["헌법재판소에는 '동의 없는 성폭력'에 선고된 무죄 판결을 취소해달라는 취지의 재판소원이 오른 상황입니다."],
+    sources: [
+      {
+        label: "다음",
+        url: "https://v.daum.net/v/yWucOXXSD0",
+      },
+    ],
+    title: "재판소원",
+  },
+  {
+    accent: "#d97997",
+    dateLabel: "동의 없는 성폭력",
+    kind: "story",
+    lines: [
+      "헌법소원 청구인은 2022년 유사강간 상황에서 '75차례' 이상 거부 의사를 밝혔지만, 1심, 2심 법원은 무죄 판결을 내렸습니다.",
+      "75차례의 거부는 왜 동의 없음의 증거가 되지 못했을까요?",
+    ],
+    title: "75차례의 거부",
+  },
+  {
+    accent: "#7b8dd8",
+    dateLabel: "반전평화",
+    kind: "section",
+    lines: [],
+    title: "전쟁입니다.",
+  },
+  {
+    accent: "#7b8dd8",
+    dateLabel: "호르무즈 해협",
+    imageLabel: "호르무즈 해협과 나무호 피격 사건",
+    imageSrc: "/namu.webp",
+    kind: "story",
+    lines: ["호르무즈 해협에서는 이란과 미국의 갈등이 심화되는 와중에 한국 선박 나무호 피격 사건이 있었고,"],
+    sources: [
+      {
+        label: "굿뉴스1",
+        url: "https://www.goodnews1.com/news/articleView.html?idxno=457810",
+      },
+    ],
+    title: "호르무즈 해협",
+  },
+  {
+    accent: "#7b8dd8",
+    dateLabel: "팔레스타인",
+    imageLabel: "팔레스타인 가자지구 관련 보도",
+    imageSrc: "/palestine.jpg",
+    kind: "story",
+    lines: ["이스라엘의 공습으로 7만명이 넘는 팔레스타인인이 사망했습니다."],
+    sources: [
+      {
+        label: "가톨릭평화신문",
+        url: "https://news.cpbc.co.kr/article/279686",
+      },
+    ],
+    title: "가자",
+  },
+  {
+    accent: "#f1f0e8",
+    dateLabel: "다음",
+    kind: "closing",
+    lines: ["돌아보니 무척 암울한 상반기였네요.", "이런 현실은 바뀔 수 있을까요?"],
+    title: "좀더 들여다볼까요?",
+  },
+];
 
 function buildStorySlides(agenda: PublicAgenda): StorySlide[] {
   const slides: StorySlide[] = [{ kind: "agenda-intro", agenda }];
@@ -863,45 +1290,6 @@ function buildStorySlides(agenda: PublicAgenda): StorySlide[] {
   return slides;
 }
 
-function pickOpeningEvents(data: PublicAgendaData): OpeningEvent[] {
-  const indexedIssues: Array<{
-    agenda: PublicAgenda;
-    issue: PublicIssue;
-    phase: PublicAgendaPhase;
-  }> = [];
-
-  for (const agenda of data.agendas) {
-    for (const phase of agenda.phases) {
-      for (const issue of phase.issues) {
-        indexedIssues.push({ agenda, issue, phase });
-      }
-    }
-  }
-
-  const usedIssueIds = new Set<string>();
-  return openingEventSpecs
-    .map((spec) => {
-      const match = indexedIssues.find(({ issue }) => {
-        if (usedIssueIds.has(issue.id)) return false;
-        return spec.match.some((needle) => issue.title.includes(needle));
-      });
-
-      if (!match) return null;
-      usedIssueIds.add(match.issue.id);
-
-      return {
-        accent: match.agenda.accent,
-        agendaTitle: match.agenda.title,
-        dateLabel: match.issue.dateLabel,
-        description: match.issue.leadSentence,
-        impactLabel: spec.impactLabel,
-        phaseTitle: match.phase.title,
-        title: spec.title,
-      };
-    })
-    .filter((event): event is OpeningEvent => event !== null);
-}
-
 function getProgress(
   state: ReaderState,
   reviewCount: number,
@@ -909,7 +1297,7 @@ function getProgress(
 ) {
   if (state.mode === "review") {
     return {
-      label: `회고 ${state.reviewIndex + 1}/${reviewCount}`,
+      label: "상반기 회고",
       percent: reviewCount ? (state.reviewIndex + 1) / (reviewCount + 2 + storyCount) : 0,
     };
   }
