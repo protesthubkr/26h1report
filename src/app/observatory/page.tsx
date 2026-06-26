@@ -1,19 +1,13 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { redirect } from "next/navigation";
 import type { Metadata } from "next";
-import type { HierarchyModel } from "../graph-explorer";
-import { IssueObservatory } from "./issue-observatory";
 
 export const dynamic = "force-static";
 
 export const metadata: Metadata = {
-  title: "Issue Observatory",
-  description: "A linked visual observatory for issue clusters, actors, and timelines.",
+  title: "2026 상반기 의제 리포트",
+  description: "A focused public report for the first half of 2026 agenda flow.",
 };
 
-export default async function ObservatoryPage() {
-  const graphPath = join(process.cwd(), "public", "data", "layers.json");
-  const model = JSON.parse(await readFile(graphPath, "utf8")) as HierarchyModel;
-
-  return <IssueObservatory model={model} />;
+export default function ObservatoryPage() {
+  redirect("/agenda-2026-h1");
 }

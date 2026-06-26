@@ -1,12 +1,7 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { GraphExplorer, type HierarchyModel } from "./graph-explorer";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-static";
 
-export default async function Home() {
-  const graphPath = join(process.cwd(), "public", "data", "layers.json");
-  const model = JSON.parse(await readFile(graphPath, "utf8")) as HierarchyModel;
-
-  return <GraphExplorer model={model} />;
+export default function Home() {
+  redirect("/agenda-2026-h1");
 }

@@ -1,19 +1,13 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { redirect } from "next/navigation";
 import type { Metadata } from "next";
-import type { HierarchyModel } from "../graph-explorer";
-import { G6Explorer } from "./g6-explorer";
 
 export const dynamic = "force-static";
 
 export const metadata: Metadata = {
-  title: "G6 Issue Combo Explorer",
-  description: "Explore the full-text issue hierarchy as nested AntV G6 combos.",
+  title: "2026 상반기 의제 리포트",
+  description: "A focused public report for the first half of 2026 agenda flow.",
 };
 
-export default async function G6Page() {
-  const graphPath = join(process.cwd(), "public", "data", "layers.json");
-  const model = JSON.parse(await readFile(graphPath, "utf8")) as HierarchyModel;
-
-  return <G6Explorer model={model} />;
+export default function G6Page() {
+  redirect("/agenda-2026-h1");
 }
