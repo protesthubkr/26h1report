@@ -7,6 +7,8 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 
 export type PublicAgendaData = {
@@ -149,6 +151,7 @@ type DateRange = {
 const OPENING_LAST_CARD_SCROLL_MS = 2200;
 const OPENING_LONG_PRESS_SCROLL_MS = 2800;
 const OPENING_CHOICE_REVEAL_DELAY_MS = 4800;
+const OPENING_CHOICE_INPUT_ARM_DELAY_MS = OPENING_CHOICE_REVEAL_DELAY_MS + 850;
 const OPENING_FINAL_REVEAL_DELAY_MS = 880;
 const OPENING_DEFAULT_CHROME_COLOR = "#f7f5ef";
 const THEME_COLOR_META_SELECTOR = 'meta[name="theme-color"]';
@@ -232,6 +235,7 @@ function OpeningCardScrollPage({
   const longPressTimerRef = useRef<number | null>(null);
   const manualFinalTransitionReleaseTimerRef = useRef<number | null>(null);
   const previousOpeningScrollTopRef = useRef(0);
+  const stableViewportWidthRef = useRef<number | null>(null);
   const topButtonRevealTimerRef = useRef<number | null>(null);
   const didLongPressRef = useRef(false);
   const isPgDnHiddenRef = useRef(false);
@@ -242,6 +246,7 @@ function OpeningCardScrollPage({
     useRef<OpeningFinalTransitionDirection>("to-final");
   const [isPgDnHidden, setIsPgDnHidden] = useState(false);
   const [isPgDnHintVisible, setIsPgDnHintVisible] = useState(true);
+  const [finalSettledAt, setFinalSettledAt] = useState<number | null>(null);
   const [isFinalCardSettled, setIsFinalCardSettled] = useState(false);
   const [isFinalScrollTransitioning, setIsFinalScrollTransitioning] = useState(false);
   const [finalTransitionDirection, setFinalTransitionDirection] =
@@ -268,7 +273,11 @@ function OpeningCardScrollPage({
     const shouldShowPgDnHint =
       !shouldHide && scroller.scrollTop <= scroller.clientHeight * 0.12;
     const shouldSettle =
-      !isFinalTransitioning && Math.abs(scroller.scrollTop - lastCard.offsetTop) <= 2;
+      !isFinalTransitioning && isOpeningFinalCardReached(scroller, lastCard);
+
+    if (shouldSettle) {
+      alignOpeningFinalCard(scroller, lastCard);
+    }
 
     if (shouldHide !== isPgDnHiddenRef.current) {
       isPgDnHiddenRef.current = shouldHide;
@@ -284,6 +293,7 @@ function OpeningCardScrollPage({
 
     isFinalCardSettledRef.current = shouldSettle;
     setIsFinalCardSettled(shouldSettle);
+    setFinalSettledAt(shouldSettle ? performance.now() : null);
 
     if (!shouldSettle) {
       clearTopButtonRevealTimer();
@@ -307,6 +317,7 @@ function OpeningCardScrollPage({
     isFinalCardSettledRef.current = false;
     setIsPgDnHidden(true);
     setIsPgDnHintVisible(false);
+    setFinalSettledAt(null);
     setIsFinalCardSettled(false);
     setIsTopButtonReady(false);
   }, [clearManualFinalTransitionReleaseTimer]);
@@ -338,6 +349,22 @@ function OpeningCardScrollPage({
     let frame = 0;
     previousOpeningScrollTopRef.current = scroller.scrollTop;
 
+    const syncStableViewportHeight = (force = false) => {
+      const viewport = window.visualViewport;
+      const width = Math.round(viewport?.width ?? window.innerWidth);
+      const height = Math.round(viewport?.height ?? window.innerHeight);
+      const shouldLockHeightOnlyResize = window.matchMedia(
+        "(hover: none) and (pointer: coarse)",
+      ).matches;
+
+      if (!force && shouldLockHeightOnlyResize && stableViewportWidthRef.current === width) {
+        return;
+      }
+
+      stableViewportWidthRef.current = width;
+      stage.style.setProperty("--opening-stable-vh", `${height}px`);
+    };
+
     const syncManualFinalScrollTransition = () => {
       if (scrollAnimationFrameRef.current !== null) return;
 
@@ -350,21 +377,28 @@ function OpeningCardScrollPage({
 
       const span = Math.max(1, lastCard.offsetTop - previousCard.offsetTop);
       const progressToFinal = (scroller.scrollTop - previousCard.offsetTop) / span;
-      const isBetweenFinalCards = progressToFinal > 0.08 && progressToFinal < 0.985;
-      const isSettledOnFinal = Math.abs(scroller.scrollTop - lastCard.offsetTop) <= 3;
+      const finalSettleTolerance = getOpeningFinalCardSettleTolerance(scroller);
+      const isSettledOnFinal = isOpeningFinalCardReached(scroller, lastCard);
+      const isBetweenFinalCards =
+        !isSettledOnFinal && progressToFinal > 0.08 && progressToFinal < 0.985;
       const isBeforeFinalTransition = progressToFinal <= 0.02;
       const isMovingUp = scroller.scrollTop < previousOpeningScrollTopRef.current;
       const reachedFinalDirectly =
-        isSettledOnFinal && previousOpeningScrollTopRef.current < lastCard.offsetTop - 3;
+        isSettledOnFinal &&
+        previousOpeningScrollTopRef.current < lastCard.offsetTop - finalSettleTolerance;
 
-      if (isBetweenFinalCards) {
-        beginFinalTransition(isMovingUp ? "from-final" : "to-final");
-        return;
+      if (isSettledOnFinal) {
+        alignOpeningFinalCard(scroller, lastCard);
       }
 
       if (isSettledOnFinal && (isFinalScrollTransitioningRef.current || reachedFinalDirectly)) {
         beginFinalTransition("to-final");
         releaseFinalTransition(scroller);
+        return;
+      }
+
+      if (isBetweenFinalCards) {
+        beginFinalTransition(isMovingUp ? "from-final" : "to-final");
         return;
       }
 
@@ -392,10 +426,26 @@ function OpeningCardScrollPage({
       frame = window.requestAnimationFrame(updateBackground);
     };
 
+    const handleViewportResize = () => {
+      syncStableViewportHeight();
+      requestUpdate();
+    };
+
+    const handleOrientationChange = () => {
+      stableViewportWidthRef.current = null;
+      window.setTimeout(() => {
+        syncStableViewportHeight(true);
+        requestUpdate();
+      }, 120);
+    };
+
+    syncStableViewportHeight(true);
     updateBackground();
     scroller.addEventListener("scroll", requestUpdate, { passive: true });
     scroller.addEventListener("scrollend", updateBackground);
-    window.addEventListener("resize", requestUpdate);
+    window.addEventListener("resize", handleViewportResize);
+    window.addEventListener("orientationchange", handleOrientationChange);
+    window.visualViewport?.addEventListener("resize", handleViewportResize);
 
     return () => {
       if (frame) window.cancelAnimationFrame(frame);
@@ -409,7 +459,9 @@ function OpeningCardScrollPage({
       scroller.classList.remove("opening-scroll-snap-manual");
       scroller.removeEventListener("scroll", requestUpdate);
       scroller.removeEventListener("scrollend", updateBackground);
-      window.removeEventListener("resize", requestUpdate);
+      window.removeEventListener("resize", handleViewportResize);
+      window.removeEventListener("orientationchange", handleOrientationChange);
+      window.visualViewport?.removeEventListener("resize", handleViewportResize);
     };
   }, [
     beginFinalTransition,
@@ -569,7 +621,13 @@ function OpeningCardScrollPage({
     const scroller = scrollerRef.current;
     if (!scroller) return;
 
-    animateOpeningScrollTo(scroller, getMaxScrollTop(scroller), OPENING_LAST_CARD_SCROLL_MS, {
+    const snapCards = Array.from(
+      scroller.querySelectorAll<HTMLElement>(".opening-snap-card"),
+    );
+    const lastCard = snapCards.at(-1);
+    const targetTop = lastCard ? lastCard.offsetTop : getMaxScrollTop(scroller);
+
+    animateOpeningScrollTo(scroller, targetTop, OPENING_LAST_CARD_SCROLL_MS, {
       usePageTransition: false,
     });
   }
@@ -579,6 +637,7 @@ function OpeningCardScrollPage({
     if (!scroller) return;
 
     isFinalCardSettledRef.current = false;
+    setFinalSettledAt(null);
     setIsFinalCardSettled(false);
     setIsTopButtonReady(false);
     animateOpeningScrollTo(scroller, 0, OPENING_LONG_PRESS_SCROLL_MS, {
@@ -625,6 +684,7 @@ function OpeningCardScrollPage({
           <OpeningScrollCard
             agendas={agendas}
             card={card}
+            finalSettledAt={finalSettledAt}
             index={index}
             isFinalCardSettled={isFinalCardSettled}
             key={`${card.title}-${index}`}
@@ -687,12 +747,14 @@ function OpeningCardScrollPage({
 function OpeningScrollCard({
   agendas,
   card,
+  finalSettledAt,
   index,
   isFinalCardSettled,
   onSelectAgenda,
 }: {
   agendas: PublicAgenda[];
   card: OpeningCard;
+  finalSettledAt: number | null;
   index: number;
   isFinalCardSettled: boolean;
   onSelectAgenda: (choice: OpeningAgendaChoice & { agenda: PublicAgenda }) => void;
@@ -701,7 +763,7 @@ function OpeningScrollCard({
   const [isVisible, setIsVisible] = useState(index === 0);
   const background = getOpeningBackground(index);
   const hasVisual = hasOpeningVisual(card);
-  const shouldShowCard = card.kind === "closing" ? isVisible && isFinalCardSettled : isVisible;
+  const shouldShowCard = card.kind === "closing" ? isFinalCardSettled : isVisible;
 
   useEffect(() => {
     const element = cardRef.current;
@@ -744,6 +806,8 @@ function OpeningScrollCard({
         <OpeningClosingBridge
           agendas={agendas}
           card={card}
+          finalSettledAt={finalSettledAt}
+          isFinalCardSettled={isFinalCardSettled}
           onSelectAgenda={onSelectAgenda}
         />
       ) : hasVisual ? (
@@ -788,13 +852,21 @@ function OpeningScrollCard({
 function OpeningClosingBridge({
   agendas,
   card,
+  finalSettledAt,
+  isFinalCardSettled,
   onSelectAgenda,
 }: {
   agendas: PublicAgenda[];
   card: OpeningCard;
+  finalSettledAt: number | null;
+  isFinalCardSettled: boolean;
   onSelectAgenda: (choice: OpeningAgendaChoice & { agenda: PublicAgenda }) => void;
 }) {
+  const acceptedChoicePointerKeyRef = useRef<string | null>(null);
+  const choiceInputArmTimerRef = useRef<number | null>(null);
   const transitionTimers = useRef<number[]>([]);
+  const [choiceInputArmedForSettledAt, setChoiceInputArmedForSettledAt] =
+    useState<number | null>(null);
   const [selectedChoiceKey, setSelectedChoiceKey] = useState<string | null>(null);
   const [transitionStage, setTransitionStage] = useState<"idle" | "selected" | "swipe">(
     "idle",
@@ -816,8 +888,78 @@ function OpeningClosingBridge({
     };
   }, []);
 
-  function handleChoiceClick(choice: OpeningAgendaChoice & { agenda: PublicAgenda }) {
-    if (transitionStage !== "idle") return;
+  useEffect(() => {
+    if (choiceInputArmTimerRef.current !== null) {
+      window.clearTimeout(choiceInputArmTimerRef.current);
+      choiceInputArmTimerRef.current = null;
+    }
+    acceptedChoicePointerKeyRef.current = null;
+
+    if (finalSettledAt === null || !isFinalCardSettled || transitionStage !== "idle") {
+      return undefined;
+    }
+
+    const shouldReduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const timer = window.setTimeout(
+      () => {
+        setChoiceInputArmedForSettledAt(finalSettledAt);
+        if (choiceInputArmTimerRef.current === timer) {
+          choiceInputArmTimerRef.current = null;
+        }
+      },
+      shouldReduceMotion ? 0 : OPENING_CHOICE_INPUT_ARM_DELAY_MS,
+    );
+    choiceInputArmTimerRef.current = timer;
+
+    return () => {
+      window.clearTimeout(timer);
+      if (choiceInputArmTimerRef.current === timer) {
+        choiceInputArmTimerRef.current = null;
+      }
+    };
+  }, [finalSettledAt, isFinalCardSettled, transitionStage]);
+
+  const isChoiceInputArmed =
+    finalSettledAt !== null &&
+    isFinalCardSettled &&
+    transitionStage === "idle" &&
+    choiceInputArmedForSettledAt === finalSettledAt;
+
+  function handleChoicePointerDown(
+    choiceKey: string,
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) {
+    if (!event.isPrimary || !isChoiceInputArmed || transitionStage !== "idle") {
+      acceptedChoicePointerKeyRef.current = null;
+      return;
+    }
+
+    acceptedChoicePointerKeyRef.current = choiceKey;
+  }
+
+  function clearChoicePointer() {
+    acceptedChoicePointerKeyRef.current = null;
+  }
+
+  function handleChoiceClick(
+    choice: OpeningAgendaChoice & { agenda: PublicAgenda },
+    event: ReactMouseEvent<HTMLButtonElement>,
+  ) {
+    const choiceKey = getOpeningChoiceKey(choice);
+    const isKeyboardActivation = event.detail === 0;
+
+    if (
+      !isChoiceInputArmed ||
+      transitionStage !== "idle" ||
+      (!isKeyboardActivation && acceptedChoicePointerKeyRef.current !== choiceKey)
+    ) {
+      acceptedChoicePointerKeyRef.current = null;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    acceptedChoicePointerKeyRef.current = null;
 
     for (const timer of transitionTimers.current) window.clearTimeout(timer);
     transitionTimers.current = [];
@@ -851,7 +993,10 @@ function OpeningClosingBridge({
           ))}
         </p>
 
-        <div className="opening-choice-panel flex w-full max-w-[1180px] flex-col gap-7 max-sm:gap-4">
+        <div
+          className="opening-choice-panel flex w-full max-w-[1180px] flex-col gap-7 max-sm:gap-4"
+          data-input-armed={isChoiceInputArmed ? "true" : "false"}
+        >
           <div className="opening-choice-header text-left text-[clamp(24px,3vw,48px)] font-black leading-none text-[#f6f2e8] max-sm:text-[23px]">
             희망은 어디에 있을까요?
           </div>
@@ -859,13 +1004,18 @@ function OpeningClosingBridge({
           <div className="opening-choice-grid grid w-full grid-cols-2 grid-rows-3 gap-4 max-sm:h-[68svh] max-sm:gap-2 sm:h-[min(66vh,640px)]">
             {choices.map((choice) => (
               <button
+                aria-disabled={!isChoiceInputArmed || transitionStage !== "idle"}
                 className="opening-choice-card group relative min-h-0 overflow-hidden bg-[#111] text-left"
                 data-selected={
                   selectedChoiceKey ? getOpeningChoiceKey(choice) === selectedChoiceKey : undefined
                 }
                 key={`${choice.agendaId}-${choice.label}`}
-                onClick={() => handleChoiceClick(choice)}
+                onClick={(event) => handleChoiceClick(choice, event)}
                 onContextMenu={(event) => event.preventDefault()}
+                onPointerCancel={clearChoicePointer}
+                onPointerDown={(event) =>
+                  handleChoicePointerDown(getOpeningChoiceKey(choice), event)
+                }
                 type="button"
               >
                 <Image
@@ -1108,6 +1258,8 @@ function getOpeningStageStyle(index: number): CSSProperties {
   return {
     "--opening-stage-bg-bottom": background.color,
     "--opening-stage-bg-top": background.color,
+    height: "var(--opening-stable-vh, 100dvh)",
+    minHeight: "var(--opening-stable-vh, 100dvh)",
   } as CSSProperties;
 }
 
@@ -1126,6 +1278,42 @@ function getOpeningScrollProgress(scroller: HTMLDivElement) {
   }
 
   return cards.length - 1;
+}
+
+function getOpeningFinalCardSettleTolerance(scroller: HTMLDivElement) {
+  return Math.max(24, Math.min(120, scroller.clientHeight * 0.14));
+}
+
+function isOpeningFinalCardReached(
+  scroller: HTMLDivElement,
+  lastCard: HTMLElement,
+) {
+  const tolerance = getOpeningFinalCardSettleTolerance(scroller);
+  const scrollTop = scroller.scrollTop;
+  const viewportBottom = scrollTop + scroller.clientHeight;
+  const cardTop = lastCard.offsetTop;
+  const cardBottom = cardTop + lastCard.offsetHeight;
+  const visiblePx = Math.max(
+    0,
+    Math.min(viewportBottom, cardBottom) - Math.max(scrollTop, cardTop),
+  );
+  const visibleRatio =
+    visiblePx / Math.max(1, Math.min(scroller.clientHeight, lastCard.offsetHeight));
+  const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+
+  return (
+    scrollTop >= cardTop ||
+    Math.abs(scrollTop - cardTop) <= tolerance ||
+    maxScrollTop - scrollTop <= tolerance ||
+    visibleRatio >= 0.82
+  );
+}
+
+function alignOpeningFinalCard(scroller: HTMLDivElement, lastCard: HTMLElement) {
+  if (scroller.scrollTop >= lastCard.offsetTop) return;
+
+  const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  scroller.scrollTop = Math.min(lastCard.offsetTop, maxScrollTop);
 }
 
 function updateOpeningCardFocus(scroller: HTMLDivElement) {

@@ -695,6 +695,10 @@ button:disabled {
   z-index: 1;
 }
 
+.opening-choice-panel[data-input-armed="false"] .opening-choice-card {
+  pointer-events: none;
+}
+
 .opening-choice-grid {
   z-index: 1;
 }
