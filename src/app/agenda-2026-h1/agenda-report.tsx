@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -142,14 +143,18 @@ type DateRange = {
   start: string;
 };
 
+const OPENING_LAST_CARD_SCROLL_MS = 2200;
+const OPENING_LONG_PRESS_SCROLL_MS = 2800;
+const OPENING_CHOICE_REVEAL_DELAY_MS = 4800;
+
 export function AgendaReport({ data }: { data: PublicAgendaData }) {
   const [hasExitedOpening, setHasExitedOpening] = useState(false);
   const [selectedTransitionTheme, setSelectedTransitionTheme] =
     useState<OpeningTransitionTheme>("election");
 
   return (
-    <main className="h-screen overflow-hidden bg-[#070707] text-[#f1f0e8]">
-      <section className="relative flex h-screen flex-col max-sm:h-svh">
+    <main className="h-[100dvh] overflow-hidden bg-white text-[#f1f0e8]">
+      <section className="relative flex h-full min-h-0 flex-col">
         <div className="relative flex min-h-0 flex-1 items-stretch overflow-hidden bg-[#090908]">
           {hasExitedOpening ? (
             <AgendaWorkSurface theme={selectedTransitionTheme} />
@@ -184,6 +189,56 @@ function OpeningCardScrollPage({
 }) {
   const stageRef = useRef<HTMLElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const scrollAnimationFrameRef = useRef<number | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const topButtonRevealTimerRef = useRef<number | null>(null);
+  const didLongPressRef = useRef(false);
+  const isPgDnHiddenRef = useRef(false);
+  const isPgDnHintVisibleRef = useRef(true);
+  const isFinalCardSettledRef = useRef(false);
+  const isFinalScrollTransitioningRef = useRef(false);
+  const [isPgDnHidden, setIsPgDnHidden] = useState(false);
+  const [isPgDnHintVisible, setIsPgDnHintVisible] = useState(true);
+  const [isFinalCardSettled, setIsFinalCardSettled] = useState(false);
+  const [isFinalScrollTransitioning, setIsFinalScrollTransitioning] = useState(false);
+  const [isTopButtonReady, setIsTopButtonReady] = useState(false);
+
+  const updateFloatingNavigation = useCallback((scroller: HTMLDivElement) => {
+    const snapCards = Array.from(
+      scroller.querySelectorAll<HTMLElement>(".opening-snap-card"),
+    );
+    const lastCard = snapCards.at(-1);
+    if (!lastCard) return;
+
+    const isFinalTransitioning = isFinalScrollTransitioningRef.current;
+    const shouldHide =
+      isFinalTransitioning ||
+      scroller.scrollTop >= lastCard.offsetTop - scroller.clientHeight * 0.28;
+    const shouldShowPgDnHint =
+      !shouldHide && scroller.scrollTop <= scroller.clientHeight * 0.12;
+    const shouldSettle =
+      !isFinalTransitioning && Math.abs(scroller.scrollTop - lastCard.offsetTop) <= 2;
+
+    if (shouldHide !== isPgDnHiddenRef.current) {
+      isPgDnHiddenRef.current = shouldHide;
+      setIsPgDnHidden(shouldHide);
+    }
+
+    if (shouldShowPgDnHint !== isPgDnHintVisibleRef.current) {
+      isPgDnHintVisibleRef.current = shouldShowPgDnHint;
+      setIsPgDnHintVisible(shouldShowPgDnHint);
+    }
+
+    if (shouldSettle === isFinalCardSettledRef.current) return;
+
+    isFinalCardSettledRef.current = shouldSettle;
+    setIsFinalCardSettled(shouldSettle);
+
+    if (!shouldSettle) {
+      clearTopButtonRevealTimer();
+      setIsTopButtonReady(false);
+    }
+  }, []);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -199,6 +254,7 @@ function OpeningCardScrollPage({
       stage.style.setProperty("--opening-stage-bg-top", background.top);
       stage.style.setProperty("--opening-stage-bg-bottom", background.bottom);
       updateOpeningCardFocus(scroller);
+      updateFloatingNavigation(scroller);
     };
 
     const requestUpdate = () => {
@@ -213,15 +269,203 @@ function OpeningCardScrollPage({
 
     return () => {
       if (frame) window.cancelAnimationFrame(frame);
+      if (scrollAnimationFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollAnimationFrameRef.current);
+        scrollAnimationFrameRef.current = null;
+      }
+      isFinalScrollTransitioningRef.current = false;
+      scroller.classList.remove("opening-scroll-snap-manual");
       scroller.removeEventListener("scroll", requestUpdate);
       scroller.removeEventListener("scrollend", updateBackground);
       window.removeEventListener("resize", requestUpdate);
     };
-  }, []);
+  }, [updateFloatingNavigation]);
+
+  useEffect(() => {
+    if (!isFinalCardSettled) return;
+
+    const shouldReduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const timer = window.setTimeout(
+      () => {
+        setIsTopButtonReady(true);
+        if (topButtonRevealTimerRef.current === timer) {
+          topButtonRevealTimerRef.current = null;
+        }
+      },
+      shouldReduceMotion ? 0 : OPENING_CHOICE_REVEAL_DELAY_MS,
+    );
+    topButtonRevealTimerRef.current = timer;
+
+    return () => {
+      window.clearTimeout(timer);
+      if (topButtonRevealTimerRef.current === timer) {
+        topButtonRevealTimerRef.current = null;
+      }
+    };
+  }, [isFinalCardSettled]);
+
+  function clearLongPressTimer() {
+    if (longPressTimerRef.current === null) return;
+    window.clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+  }
+
+  function clearTopButtonRevealTimer() {
+    if (topButtonRevealTimerRef.current === null) return;
+    window.clearTimeout(topButtonRevealTimerRef.current);
+    topButtonRevealTimerRef.current = null;
+  }
+
+  function cancelOpeningScrollAnimation(scroller = scrollerRef.current) {
+    if (scrollAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(scrollAnimationFrameRef.current);
+      scrollAnimationFrameRef.current = null;
+    }
+
+    setFinalScrollTransitioning(false);
+    scroller?.classList.remove("opening-scroll-snap-manual");
+  }
+
+  function setFinalScrollTransitioning(nextValue: boolean) {
+    if (nextValue === isFinalScrollTransitioningRef.current) return;
+
+    isFinalScrollTransitioningRef.current = nextValue;
+    setIsFinalScrollTransitioning(nextValue);
+  }
+
+  function getMaxScrollTop(scroller: HTMLDivElement) {
+    return Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  }
+
+  function animateOpeningScrollTo(
+    scroller: HTMLDivElement,
+    targetTop: number,
+    durationMs: number,
+    options: { usePageTransition?: boolean } = {},
+  ) {
+    cancelOpeningScrollAnimation(scroller);
+
+    const startTop = scroller.scrollTop;
+    const finalTop = Math.max(0, Math.min(getMaxScrollTop(scroller), targetTop));
+    const isFinalTarget = finalTop >= getMaxScrollTop(scroller) - 2;
+    const usePageTransition = options.usePageTransition ?? isFinalTarget;
+
+    if (Math.abs(finalTop - startTop) < 1) {
+      scroller.scrollTop = finalTop;
+      updateOpeningCardFocus(scroller);
+      updateFloatingNavigation(scroller);
+      return;
+    }
+
+    const startedAt = performance.now();
+    if (usePageTransition) {
+      setFinalScrollTransitioning(true);
+      isPgDnHiddenRef.current = true;
+      isPgDnHintVisibleRef.current = false;
+      isFinalCardSettledRef.current = false;
+      setIsPgDnHidden(true);
+      setIsPgDnHintVisible(false);
+      setIsFinalCardSettled(false);
+      setIsTopButtonReady(false);
+    }
+    scroller.classList.add("opening-scroll-snap-manual");
+
+    const step = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / durationMs);
+      const easedProgress = easeOpeningFinalScroll(progress);
+      scroller.scrollTop = startTop + (finalTop - startTop) * easedProgress;
+
+      if (progress < 1) {
+        scrollAnimationFrameRef.current = window.requestAnimationFrame(step);
+        return;
+      }
+
+      scroller.scrollTop = finalTop;
+      scrollAnimationFrameRef.current = null;
+      setFinalScrollTransitioning(false);
+      scroller.classList.remove("opening-scroll-snap-manual");
+      updateOpeningCardFocus(scroller);
+      updateFloatingNavigation(scroller);
+    };
+
+    scrollAnimationFrameRef.current = window.requestAnimationFrame(step);
+  }
+
+  function scrollToNextCard() {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+
+    const snapCards = Array.from(
+      scroller.querySelectorAll<HTMLElement>(".opening-snap-card"),
+    );
+    const currentTop = scroller.scrollTop;
+    const nextCard = snapCards.find((snapCard) => snapCard.offsetTop > currentTop + 24);
+    const targetTop = nextCard
+      ? nextCard.offsetTop
+      : getMaxScrollTop(scroller);
+
+    if (targetTop >= getMaxScrollTop(scroller) - 2) {
+      animateOpeningScrollTo(scroller, targetTop, OPENING_LAST_CARD_SCROLL_MS);
+      return;
+    }
+
+    cancelOpeningScrollAnimation(scroller);
+    scroller.scrollTo({
+      behavior: "smooth",
+      top: targetTop,
+    });
+  }
+
+  function scrollToLastCard() {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+
+    animateOpeningScrollTo(scroller, getMaxScrollTop(scroller), OPENING_LAST_CARD_SCROLL_MS, {
+      usePageTransition: false,
+    });
+  }
+
+  function scrollToFirstCard() {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+
+    isFinalCardSettledRef.current = false;
+    setIsFinalCardSettled(false);
+    setIsTopButtonReady(false);
+    animateOpeningScrollTo(scroller, 0, OPENING_LONG_PRESS_SCROLL_MS, {
+      usePageTransition: true,
+    });
+  }
+
+  function handlePgDnPointerDown() {
+    didLongPressRef.current = false;
+    clearLongPressTimer();
+    longPressTimerRef.current = window.setTimeout(() => {
+      didLongPressRef.current = true;
+      scrollToLastCard();
+      clearLongPressTimer();
+    }, 620);
+  }
+
+  function handlePgDnPointerEnd() {
+    clearLongPressTimer();
+  }
+
+  function handlePgDnClick() {
+    if (didLongPressRef.current) {
+      didLongPressRef.current = false;
+      return;
+    }
+
+    scrollToNextCard();
+  }
+
+  const isTopButtonVisible = isFinalCardSettled && isTopButtonReady;
 
   return (
     <article
       className="opening-review-stage relative h-full w-full overflow-hidden"
+      data-final-transitioning={isFinalScrollTransitioning ? "true" : "false"}
       ref={stageRef}
       style={getOpeningStageStyle(0)}
     >
@@ -231,11 +475,59 @@ function OpeningCardScrollPage({
             agendas={agendas}
             card={card}
             index={index}
+            isFinalCardSettled={isFinalCardSettled}
             key={`${card.title}-${index}`}
             onSelectAgenda={onSelectAgenda}
           />
         ))}
       </div>
+      <span
+        aria-hidden="true"
+        className={`opening-pgdn-hint${isPgDnHidden || !isPgDnHintVisible ? " opening-pgdn-hint-hidden" : ""}`}
+      >
+        <span>꾹 누르면</span>
+        <span>마지막으로</span>
+      </span>
+      <button
+        aria-label="다음 카드로 내려가기. 길게 누르면 마지막으로 이동"
+        aria-hidden={isPgDnHidden}
+        className={`opening-pgdn-button${isPgDnHidden ? " opening-pgdn-button-hidden" : ""}`}
+        disabled={isPgDnHidden}
+        onClick={handlePgDnClick}
+        onPointerCancel={handlePgDnPointerEnd}
+        onPointerDown={handlePgDnPointerDown}
+        onPointerLeave={handlePgDnPointerEnd}
+        onPointerUp={handlePgDnPointerEnd}
+        type="button"
+      >
+        <Image
+          alt=""
+          aria-hidden="true"
+          className="opening-pgdn-icon"
+          height={512}
+          src="/arrow.png"
+          unoptimized
+          width={512}
+        />
+      </button>
+      <button
+        aria-label="처음 카드로 돌아가기"
+        aria-hidden={!isTopButtonVisible}
+        className={`opening-top-button${!isTopButtonVisible ? " opening-top-button-hidden" : ""}`}
+        disabled={!isTopButtonVisible}
+        onClick={scrollToFirstCard}
+        type="button"
+      >
+        <Image
+          alt=""
+          aria-hidden="true"
+          className="opening-top-icon"
+          height={512}
+          src="/arrow.png"
+          unoptimized
+          width={512}
+        />
+      </button>
     </article>
   );
 }
@@ -244,17 +536,20 @@ function OpeningScrollCard({
   agendas,
   card,
   index,
+  isFinalCardSettled,
   onSelectAgenda,
 }: {
   agendas: PublicAgenda[];
   card: OpeningCard;
   index: number;
+  isFinalCardSettled: boolean;
   onSelectAgenda: (choice: OpeningAgendaChoice & { agenda: PublicAgenda }) => void;
 }) {
   const cardRef = useRef<HTMLElement | null>(null);
   const [isVisible, setIsVisible] = useState(index === 0);
   const background = getOpeningBackground(index);
   const hasVisual = hasOpeningVisual(card);
+  const shouldShowCard = card.kind === "closing" ? isVisible && isFinalCardSettled : isVisible;
 
   useEffect(() => {
     const element = cardRef.current;
@@ -279,7 +574,7 @@ function OpeningScrollCard({
     <section
       className={getOpeningCardClassName(card)}
       data-tone={background.tone}
-      data-visible={isVisible ? "true" : "false"}
+      data-visible={shouldShowCard ? "true" : "false"}
       ref={cardRef}
       style={
         {
@@ -405,7 +700,7 @@ function OpeningClosingBridge({
         </p>
 
         <div className="opening-choice-panel flex w-full max-w-[1180px] flex-col gap-7 max-sm:gap-4">
-          <div className="opening-choice-header text-right text-[clamp(24px,3vw,48px)] font-black leading-none text-[#f6f2e8] max-sm:text-[23px]">
+          <div className="opening-choice-header text-left text-[clamp(24px,3vw,48px)] font-black leading-none text-[#f6f2e8] max-sm:text-[23px]">
             희망은 어디에 있을까요?
           </div>
 
@@ -447,8 +742,8 @@ function getOpeningChoiceKey(choice: OpeningAgendaChoice) {
 
 function getOpeningTransitionDurationMs(theme: OpeningTransitionTheme) {
   if (theme === "disabled") return 2580;
-  if (theme === "pride") return 2240;
-  if (theme === "palestine") return 1940;
+  if (theme === "pride") return 2700;
+  if (theme === "palestine") return 2700;
   return 1180;
 }
 
@@ -475,16 +770,7 @@ function OpeningTransitionPage({ theme }: { theme: OpeningTransitionTheme }) {
           unoptimized
         />
       ) : null}
-      {theme === "palestine" ? (
-        <Image
-          alt=""
-          className="opening-transition-media opening-transition-media-palestine"
-          fill
-          sizes="100vw"
-          src="/palestine-flag.png"
-          unoptimized
-        />
-      ) : null}
+      {theme === "palestine" ? <div className="opening-transition-media opening-transition-media-palestine" /> : null}
     </div>
   );
 }
@@ -702,9 +988,15 @@ function getOpeningInterpolatedBackground(progress: number): {
   const maxIndex = openingStoryCards.length - 1;
   const clamped = Math.max(0, Math.min(maxIndex, progress));
 
-  if (clamped >= maxIndex - 0.18) {
-    const amount = smoothStep((clamped - (maxIndex - 0.18)) / 0.18);
-    const color = mixOklabColor("#050505", "#f7f5ef", amount);
+  const baseIndex = Math.min(maxIndex, Math.floor(clamped));
+  const nextIndex = Math.min(maxIndex, baseIndex + 1);
+  const localProgress = clamped - baseIndex;
+  const from = getOpeningBackgroundStep(baseIndex).color;
+  const to = getOpeningBackgroundStep(nextIndex).color;
+  const eased = smoothStep(localProgress);
+
+  if (nextIndex === maxIndex) {
+    const color = mixOklabColor(from, to, eased);
 
     return {
       bottom: color,
@@ -712,12 +1004,6 @@ function getOpeningInterpolatedBackground(progress: number): {
     };
   }
 
-  const baseIndex = Math.min(maxIndex, Math.floor(clamped));
-  const nextIndex = Math.min(maxIndex, baseIndex + 1);
-  const localProgress = clamped - baseIndex;
-  const from = getOpeningBackgroundStep(baseIndex).color;
-  const to = getOpeningBackgroundStep(nextIndex).color;
-  const eased = smoothStep(localProgress);
   const spread = Math.sin(Math.PI * eased) * 0.22;
 
   return {
@@ -744,6 +1030,12 @@ function getOpeningBackgroundStep(index: number): {
 
 function smoothStep(value: number) {
   return value * value * (3 - 2 * value);
+}
+
+function easeOpeningFinalScroll(value: number) {
+  return value < 0.5
+    ? 4 * value * value * value
+    : 1 - ((-2 * value + 2) ** 3) / 2;
 }
 
 function mixOklabColor(from: string, to: string, amount: number) {
