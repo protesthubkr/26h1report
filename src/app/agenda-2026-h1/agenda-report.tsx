@@ -150,11 +150,32 @@ const OPENING_LAST_CARD_SCROLL_MS = 2200;
 const OPENING_LONG_PRESS_SCROLL_MS = 2800;
 const OPENING_CHOICE_REVEAL_DELAY_MS = 4800;
 const OPENING_FINAL_REVEAL_DELAY_MS = 880;
+const OPENING_DEFAULT_CHROME_COLOR = "#f7f5ef";
+const THEME_COLOR_META_SELECTOR = 'meta[name="theme-color"]';
+
+const openingTransitionChromeColors: Record<OpeningTransitionTheme, string> = {
+  disabled: "rgb(88, 88, 88)",
+  election: "rgb(255, 221, 0)",
+  gender: "rgb(145, 70, 201)",
+  labor: "rgb(220, 36, 31)",
+  palestine: "#ffffff",
+  pride: "#ffffff",
+};
 
 export function AgendaReport({ data }: { data: PublicAgendaData }) {
   const [hasExitedOpening, setHasExitedOpening] = useState(false);
   const [selectedTransitionTheme, setSelectedTransitionTheme] =
     useState<OpeningTransitionTheme>("election");
+
+  useEffect(() => {
+    if (!hasExitedOpening) return undefined;
+
+    syncMobileChromeColor(openingTransitionChromeColors[selectedTransitionTheme]);
+
+    return () => {
+      syncMobileChromeColor(OPENING_DEFAULT_CHROME_COLOR);
+    };
+  }, [hasExitedOpening, selectedTransitionTheme]);
 
   return (
     <main className="h-[100dvh] overflow-hidden bg-transparent text-[#f1f0e8]">
@@ -180,6 +201,20 @@ export function AgendaReport({ data }: { data: PublicAgendaData }) {
 
 function AgendaWorkSurface({ theme }: { theme: OpeningTransitionTheme }) {
   return <article aria-label="어젠다 작업면" className="agenda-work-surface h-full w-full" data-theme={theme} />;
+}
+
+function syncMobileChromeColor(color: string) {
+  if (typeof document === "undefined") return;
+
+  document.documentElement.style.setProperty("--ios-chrome-bg", color);
+  document.body.style.setProperty("--ios-chrome-bg", color);
+
+  const themeColorMeta = document.querySelector<HTMLMetaElement>(
+    THEME_COLOR_META_SELECTOR,
+  );
+  if (themeColorMeta && themeColorMeta.content !== color) {
+    themeColorMeta.content = color;
+  }
 }
 
 function OpeningCardScrollPage({
@@ -345,6 +380,7 @@ function OpeningCardScrollPage({
       const background = getOpeningInterpolatedBackground(progress);
       stage.style.setProperty("--opening-stage-bg-top", background.top);
       stage.style.setProperty("--opening-stage-bg-bottom", background.bottom);
+      syncMobileChromeColor(background.top);
       syncManualFinalScrollTransition();
       updateOpeningCardFocus(scroller);
       updateFloatingNavigation(scroller);
@@ -368,6 +404,7 @@ function OpeningCardScrollPage({
         scrollAnimationFrameRef.current = null;
       }
       clearManualFinalTransitionReleaseTimer();
+      syncMobileChromeColor(OPENING_DEFAULT_CHROME_COLOR);
       isFinalScrollTransitioningRef.current = false;
       scroller.classList.remove("opening-scroll-snap-manual");
       scroller.removeEventListener("scroll", requestUpdate);
