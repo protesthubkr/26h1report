@@ -3,7 +3,6 @@
 :root {
   --background: #f7f5ef;
   --foreground: #101010;
-  --ios-chrome-bg: #050505;
 }
 
 @theme inline {
@@ -30,43 +29,6 @@ body {
   font-synthesis-weight: none;
   min-height: 100dvh;
   text-rendering: optimizeLegibility;
-}
-
-html::before,
-html::after,
-body::before,
-body::after {
-  background: #050505;
-  content: "";
-  pointer-events: none;
-  position: fixed;
-  z-index: 2147483647;
-}
-
-body::before {
-  height: env(safe-area-inset-top);
-  inset: 0 0 auto;
-}
-
-body::after {
-  bottom: 0;
-  height: env(safe-area-inset-bottom);
-  left: 0;
-  right: 0;
-}
-
-html::before {
-  bottom: 0;
-  left: 0;
-  top: 0;
-  width: env(safe-area-inset-left);
-}
-
-html::after {
-  bottom: 0;
-  right: 0;
-  top: 0;
-  width: env(safe-area-inset-right);
 }
 
 button,
@@ -349,6 +311,10 @@ button:disabled {
     var(--opening-stage-bg-top, #f7f5ef) 0%,
     var(--opening-stage-bg-bottom, #f7f5ef) 100%
   );
+  clip-path: inset(
+    env(safe-area-inset-top) env(safe-area-inset-right)
+      env(safe-area-inset-bottom) env(safe-area-inset-left)
+  );
   isolation: isolate;
 }
 
@@ -548,6 +514,10 @@ button:disabled {
 .agenda-work-surface,
 .opening-transition-page {
   background: #050505;
+  clip-path: inset(
+    env(safe-area-inset-top) env(safe-area-inset-right)
+      env(safe-area-inset-bottom) env(safe-area-inset-left)
+  );
 }
 
 .agenda-work-surface[data-theme="election"],

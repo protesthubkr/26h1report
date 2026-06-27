@@ -152,17 +152,11 @@ const OPENING_CHOICE_REVEAL_DELAY_MS = 4800;
 const OPENING_CHOICE_AFTER_REVEAL_INPUT_DELAY_MS = 850;
 const OPENING_CHOICE_INPUT_ARM_DELAY_MS =
   OPENING_CHOICE_REVEAL_DELAY_MS + OPENING_CHOICE_AFTER_REVEAL_INPUT_DELAY_MS;
-const FIXED_SAFE_AREA_COLOR = "#050505";
-const THEME_COLOR_META_SELECTOR = 'meta[name="theme-color"]';
 
 export function AgendaReport({ data }: { data: PublicAgendaData }) {
   const [hasExitedOpening, setHasExitedOpening] = useState(false);
   const [selectedTransitionTheme, setSelectedTransitionTheme] =
     useState<OpeningTransitionTheme>("election");
-
-  useEffect(() => {
-    syncFixedSafeAreaColor();
-  }, [hasExitedOpening, selectedTransitionTheme]);
 
   return (
     <main className="h-[100dvh] overflow-hidden bg-transparent text-[#f1f0e8]">
@@ -188,20 +182,6 @@ export function AgendaReport({ data }: { data: PublicAgendaData }) {
 
 function AgendaWorkSurface({ theme }: { theme: OpeningTransitionTheme }) {
   return <article aria-label="어젠다 작업면" className="agenda-work-surface h-full w-full" data-theme={theme} />;
-}
-
-function syncFixedSafeAreaColor() {
-  if (typeof document === "undefined") return;
-
-  document.documentElement.style.setProperty("--ios-chrome-bg", FIXED_SAFE_AREA_COLOR);
-  document.body.style.setProperty("--ios-chrome-bg", FIXED_SAFE_AREA_COLOR);
-
-  const themeColorMeta = document.querySelector<HTMLMetaElement>(
-    THEME_COLOR_META_SELECTOR,
-  );
-  if (themeColorMeta && themeColorMeta.content !== FIXED_SAFE_AREA_COLOR) {
-    themeColorMeta.content = FIXED_SAFE_AREA_COLOR;
-  }
 }
 
 function OpeningCardScrollPage({
@@ -311,7 +291,6 @@ function OpeningCardScrollPage({
       const background = getOpeningInterpolatedBackground(progress);
       stage.style.setProperty("--opening-stage-bg-top", background.top);
       stage.style.setProperty("--opening-stage-bg-bottom", background.bottom);
-      syncFixedSafeAreaColor();
       updateOpeningCardFocus(scroller);
       updateFloatingNavigation(scroller);
       previousOpeningScrollTopRef.current = scroller.scrollTop;
@@ -410,7 +389,6 @@ function OpeningCardScrollPage({
         window.cancelAnimationFrame(scrollAnimationFrameRef.current);
         scrollAnimationFrameRef.current = null;
       }
-      syncFixedSafeAreaColor();
       scroller.classList.remove("opening-scroll-snap-manual");
       scroller.removeEventListener("scroll", requestUpdate);
       scroller.removeEventListener("scrollend", updateBackground);
