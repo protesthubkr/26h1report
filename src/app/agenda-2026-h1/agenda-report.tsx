@@ -209,13 +209,34 @@ function syncMobileChromeColor(color: string) {
   if (typeof document === "undefined") return;
 
   document.documentElement.style.setProperty("--ios-chrome-bg", color);
+  document.documentElement.style.setProperty("--ios-page-bg", color);
   document.body.style.setProperty("--ios-chrome-bg", color);
+  document.body.style.setProperty("--ios-page-bg", color);
 
   const themeColorMeta = document.querySelector<HTMLMetaElement>(
     THEME_COLOR_META_SELECTOR,
   );
   if (themeColorMeta && themeColorMeta.content !== color) {
     themeColorMeta.content = color;
+  }
+}
+
+function syncMobileOpeningBackground(top: string, bottom: string) {
+  if (typeof document === "undefined") return;
+
+  const pageBackground =
+    top === bottom ? top : `linear-gradient(180deg, ${top} 0%, ${bottom} 100%)`;
+
+  document.documentElement.style.setProperty("--ios-chrome-bg", top);
+  document.documentElement.style.setProperty("--ios-page-bg", pageBackground);
+  document.body.style.setProperty("--ios-chrome-bg", top);
+  document.body.style.setProperty("--ios-page-bg", pageBackground);
+
+  const themeColorMeta = document.querySelector<HTMLMetaElement>(
+    THEME_COLOR_META_SELECTOR,
+  );
+  if (themeColorMeta && themeColorMeta.content !== top) {
+    themeColorMeta.content = top;
   }
 }
 
@@ -246,6 +267,7 @@ function OpeningCardScrollPage({
     useState<number | null>(null);
   const [isFinalCardSettled, setIsFinalCardSettled] = useState(false);
   const [isTopButtonReady, setIsTopButtonReady] = useState(false);
+  const [isAgendaTransitioning, setIsAgendaTransitioning] = useState(false);
 
   const clearTopButtonRevealTimer = useCallback(() => {
     if (topButtonRevealTimerRef.current === null) return;
@@ -325,7 +347,7 @@ function OpeningCardScrollPage({
       const background = getOpeningInterpolatedBackground(progress);
       stage.style.setProperty("--opening-stage-bg-top", background.top);
       stage.style.setProperty("--opening-stage-bg-bottom", background.bottom);
-      syncMobileChromeColor(background.top);
+      syncMobileOpeningBackground(background.top, background.bottom);
       updateOpeningCardFocus(scroller);
       updateFloatingNavigation(scroller);
       previousOpeningScrollTopRef.current = scroller.scrollTop;
@@ -574,6 +596,7 @@ function OpeningCardScrollPage({
     setFinalChoiceRevealForcedAt(null);
     setIsFinalCardSettled(false);
     setIsTopButtonReady(false);
+    setIsAgendaTransitioning(false);
     animateOpeningScrollTo(scroller, 0, OPENING_LONG_PRESS_SCROLL_MS);
   }
 
@@ -600,7 +623,8 @@ function OpeningCardScrollPage({
     scrollToNextCard();
   }
 
-  const isTopButtonVisible = isFinalCardSettled && isTopButtonReady;
+  const isTopButtonVisible =
+    isFinalCardSettled && isTopButtonReady && !isAgendaTransitioning;
 
   return (
     <article
@@ -618,6 +642,7 @@ function OpeningCardScrollPage({
             index={index}
             isFinalCardSettled={isFinalCardSettled}
             key={`${card.title}-${index}`}
+            onBeginAgendaTransition={() => setIsAgendaTransitioning(true)}
             onSelectAgenda={onSelectAgenda}
           />
         ))}
@@ -655,7 +680,7 @@ function OpeningCardScrollPage({
       <button
         aria-label="처음 카드로 돌아가기"
         aria-hidden={!isTopButtonVisible}
-        className={`opening-top-button${!isTopButtonVisible ? " opening-top-button-hidden" : ""}`}
+        className={`opening-top-button${!isTopButtonVisible ? " opening-top-button-hidden" : ""}${isAgendaTransitioning ? " opening-top-button-fast-hidden" : ""}`}
         disabled={!isTopButtonVisible}
         onClick={scrollToFirstCard}
         type="button"
@@ -681,6 +706,7 @@ function OpeningScrollCard({
   finalSettledAt,
   index,
   isFinalCardSettled,
+  onBeginAgendaTransition,
   onSelectAgenda,
 }: {
   agendas: PublicAgenda[];
@@ -689,6 +715,7 @@ function OpeningScrollCard({
   finalSettledAt: number | null;
   index: number;
   isFinalCardSettled: boolean;
+  onBeginAgendaTransition: () => void;
   onSelectAgenda: (choice: OpeningAgendaChoice & { agenda: PublicAgenda }) => void;
 }) {
   const cardRef = useRef<HTMLElement | null>(null);
@@ -750,6 +777,7 @@ function OpeningScrollCard({
           finalChoiceRevealForcedAt={finalChoiceRevealForcedAt}
           finalSettledAt={finalSettledAt}
           isFinalCardSettled={isFinalCardSettled}
+          onBeginAgendaTransition={onBeginAgendaTransition}
           onSelectAgenda={onSelectAgenda}
         />
       ) : hasVisual ? (
@@ -797,6 +825,7 @@ function OpeningClosingBridge({
   finalChoiceRevealForcedAt,
   finalSettledAt,
   isFinalCardSettled,
+  onBeginAgendaTransition,
   onSelectAgenda,
 }: {
   agendas: PublicAgenda[];
@@ -804,6 +833,7 @@ function OpeningClosingBridge({
   finalChoiceRevealForcedAt: number | null;
   finalSettledAt: number | null;
   isFinalCardSettled: boolean;
+  onBeginAgendaTransition: () => void;
   onSelectAgenda: (choice: OpeningAgendaChoice & { agenda: PublicAgenda }) => void;
 }) {
   const acceptedChoicePointerKeyRef = useRef<string | null>(null);
@@ -911,6 +941,7 @@ function OpeningClosingBridge({
 
     for (const timer of transitionTimers.current) window.clearTimeout(timer);
     transitionTimers.current = [];
+    onBeginAgendaTransition();
     setSelectedChoiceKey(getOpeningChoiceKey(choice));
     setTransitionStage("selected");
     const transitionDuration = getOpeningTransitionDurationMs(choice.transitionTheme);
@@ -1206,8 +1237,8 @@ function getOpeningStageStyle(index: number): CSSProperties {
   return {
     "--opening-stage-bg-bottom": background.color,
     "--opening-stage-bg-top": background.color,
-    height: "var(--opening-stable-vh, 100dvh)",
-    minHeight: "var(--opening-stable-vh, 100dvh)",
+    height: "max(var(--opening-stable-vh, 100dvh), 100dvh)",
+    minHeight: "max(var(--opening-stable-vh, 100dvh), 100dvh)",
   } as CSSProperties;
 }
 

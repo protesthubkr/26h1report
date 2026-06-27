@@ -4,6 +4,7 @@
   --background: #f7f5ef;
   --foreground: #101010;
   --ios-chrome-bg: #f7f5ef;
+  --ios-page-bg: #f7f5ef;
 }
 
 @theme inline {
@@ -16,7 +17,9 @@
 
 html,
 body {
-  background: var(--ios-chrome-bg, var(--background));
+  background: var(--ios-page-bg, var(--ios-chrome-bg, var(--background)));
+  background-repeat: no-repeat;
+  background-size: 100% 100dvh;
   color: var(--foreground);
 }
 
@@ -474,6 +477,13 @@ button:disabled {
 
 .opening-top-button.opening-top-button-hidden {
   transform: translateY(-12px) scale(0.92);
+}
+
+.opening-top-button.opening-top-button-fast-hidden {
+  transition:
+    opacity 140ms ease-out,
+    transform 160ms cubic-bezier(0.22, 0.86, 0.22, 1),
+    border-color 140ms ease-out !important;
 }
 
 .opening-pgdn-button:active,
