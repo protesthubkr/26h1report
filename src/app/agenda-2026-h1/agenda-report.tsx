@@ -152,17 +152,8 @@ const OPENING_CHOICE_REVEAL_DELAY_MS = 4800;
 const OPENING_CHOICE_AFTER_REVEAL_INPUT_DELAY_MS = 850;
 const OPENING_CHOICE_INPUT_ARM_DELAY_MS =
   OPENING_CHOICE_REVEAL_DELAY_MS + OPENING_CHOICE_AFTER_REVEAL_INPUT_DELAY_MS;
-const OPENING_DEFAULT_CHROME_COLOR = "#f7f5ef";
+const FIXED_SAFE_AREA_COLOR = "#050505";
 const THEME_COLOR_META_SELECTOR = 'meta[name="theme-color"]';
-
-const openingTransitionChromeColors: Record<OpeningTransitionTheme, string> = {
-  disabled: "rgb(88, 88, 88)",
-  election: "rgb(255, 221, 0)",
-  gender: "rgb(145, 70, 201)",
-  labor: "rgb(220, 36, 31)",
-  palestine: "#ffffff",
-  pride: "#ffffff",
-};
 
 export function AgendaReport({ data }: { data: PublicAgendaData }) {
   const [hasExitedOpening, setHasExitedOpening] = useState(false);
@@ -170,13 +161,7 @@ export function AgendaReport({ data }: { data: PublicAgendaData }) {
     useState<OpeningTransitionTheme>("election");
 
   useEffect(() => {
-    if (!hasExitedOpening) return undefined;
-
-    syncMobileChromeColor(openingTransitionChromeColors[selectedTransitionTheme]);
-
-    return () => {
-      syncMobileChromeColor(OPENING_DEFAULT_CHROME_COLOR);
-    };
+    syncFixedSafeAreaColor();
   }, [hasExitedOpening, selectedTransitionTheme]);
 
   return (
@@ -205,38 +190,17 @@ function AgendaWorkSurface({ theme }: { theme: OpeningTransitionTheme }) {
   return <article aria-label="어젠다 작업면" className="agenda-work-surface h-full w-full" data-theme={theme} />;
 }
 
-function syncMobileChromeColor(color: string) {
+function syncFixedSafeAreaColor() {
   if (typeof document === "undefined") return;
 
-  document.documentElement.style.setProperty("--ios-chrome-bg", color);
-  document.documentElement.style.setProperty("--ios-page-bg", color);
-  document.body.style.setProperty("--ios-chrome-bg", color);
-  document.body.style.setProperty("--ios-page-bg", color);
+  document.documentElement.style.setProperty("--ios-chrome-bg", FIXED_SAFE_AREA_COLOR);
+  document.body.style.setProperty("--ios-chrome-bg", FIXED_SAFE_AREA_COLOR);
 
   const themeColorMeta = document.querySelector<HTMLMetaElement>(
     THEME_COLOR_META_SELECTOR,
   );
-  if (themeColorMeta && themeColorMeta.content !== color) {
-    themeColorMeta.content = color;
-  }
-}
-
-function syncMobileOpeningBackground(top: string, bottom: string) {
-  if (typeof document === "undefined") return;
-
-  const pageBackground =
-    top === bottom ? top : `linear-gradient(180deg, ${top} 0%, ${bottom} 100%)`;
-
-  document.documentElement.style.setProperty("--ios-chrome-bg", top);
-  document.documentElement.style.setProperty("--ios-page-bg", pageBackground);
-  document.body.style.setProperty("--ios-chrome-bg", top);
-  document.body.style.setProperty("--ios-page-bg", pageBackground);
-
-  const themeColorMeta = document.querySelector<HTMLMetaElement>(
-    THEME_COLOR_META_SELECTOR,
-  );
-  if (themeColorMeta && themeColorMeta.content !== top) {
-    themeColorMeta.content = top;
+  if (themeColorMeta && themeColorMeta.content !== FIXED_SAFE_AREA_COLOR) {
+    themeColorMeta.content = FIXED_SAFE_AREA_COLOR;
   }
 }
 
@@ -347,7 +311,7 @@ function OpeningCardScrollPage({
       const background = getOpeningInterpolatedBackground(progress);
       stage.style.setProperty("--opening-stage-bg-top", background.top);
       stage.style.setProperty("--opening-stage-bg-bottom", background.bottom);
-      syncMobileOpeningBackground(background.top, background.bottom);
+      syncFixedSafeAreaColor();
       updateOpeningCardFocus(scroller);
       updateFloatingNavigation(scroller);
       previousOpeningScrollTopRef.current = scroller.scrollTop;
@@ -446,7 +410,7 @@ function OpeningCardScrollPage({
         window.cancelAnimationFrame(scrollAnimationFrameRef.current);
         scrollAnimationFrameRef.current = null;
       }
-      syncMobileChromeColor(OPENING_DEFAULT_CHROME_COLOR);
+      syncFixedSafeAreaColor();
       scroller.classList.remove("opening-scroll-snap-manual");
       scroller.removeEventListener("scroll", requestUpdate);
       scroller.removeEventListener("scrollend", updateBackground);
@@ -1237,8 +1201,8 @@ function getOpeningStageStyle(index: number): CSSProperties {
   return {
     "--opening-stage-bg-bottom": background.color,
     "--opening-stage-bg-top": background.color,
-    height: "max(var(--opening-stable-vh, 100dvh), 100dvh)",
-    minHeight: "max(var(--opening-stable-vh, 100dvh), 100dvh)",
+    height: "var(--opening-stable-vh, 100dvh)",
+    minHeight: "var(--opening-stable-vh, 100dvh)",
   } as CSSProperties;
 }
 
