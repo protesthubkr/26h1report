@@ -108,6 +108,13 @@ type OpeningAgendaChoice = {
   label: string;
 };
 
+type OpeningBackground = {
+  current: string;
+  end: string;
+  start: string;
+  tone: "light" | "dark";
+};
+
 type PublicStatement = {
   date: string;
   organization: string;
@@ -340,9 +347,50 @@ function OpeningCardScrollPage({
   cards: OpeningCard[];
   onSelectAgenda: (agenda: PublicAgenda) => void;
 }) {
+  const stageRef = useRef<HTMLElement | null>(null);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    const scroller = scrollerRef.current;
+    if (!stage || !scroller) return;
+
+    let frame = 0;
+
+    const updateBackground = () => {
+      frame = 0;
+      const progress = getOpeningScrollProgress(scroller);
+      const background = getOpeningInterpolatedBackground(progress);
+      stage.style.setProperty("--opening-stage-bg-top", background.top);
+      stage.style.setProperty("--opening-stage-bg-bottom", background.bottom);
+      updateOpeningCardFocus(scroller);
+    };
+
+    const requestUpdate = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(updateBackground);
+    };
+
+    updateBackground();
+    scroller.addEventListener("scroll", requestUpdate, { passive: true });
+    scroller.addEventListener("scrollend", updateBackground);
+    window.addEventListener("resize", requestUpdate);
+
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      scroller.removeEventListener("scroll", requestUpdate);
+      scroller.removeEventListener("scrollend", updateBackground);
+      window.removeEventListener("resize", requestUpdate);
+    };
+  }, []);
+
   return (
-    <article className="relative h-full w-full overflow-hidden bg-black">
-      <div className="opening-scroll-snap h-full overflow-y-auto">
+    <article
+      className="opening-review-stage relative h-full w-full overflow-hidden"
+      ref={stageRef}
+      style={getOpeningStageStyle(0)}
+    >
+      <div className="opening-scroll-snap h-full overflow-y-auto" ref={scrollerRef}>
         {cards.map((card, index) => (
           <OpeningScrollCard
             agendas={agendas}
@@ -370,32 +418,44 @@ function OpeningScrollCard({
 }) {
   const cardRef = useRef<HTMLElement | null>(null);
   const [isVisible, setIsVisible] = useState(index === 0);
+  const background = getOpeningBackground(index);
 
   useEffect(() => {
     const element = cardRef.current;
-    if (!element || isVisible) return;
+    if (!element) return;
     const scrollRoot = element.closest(".opening-scroll-snap");
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry?.isIntersecting) {
-          setIsVisible(true);
-          observer.disconnect();
-        }
+        setIsVisible(Boolean(entry?.isIntersecting && entry.intersectionRatio >= 0.18));
       },
-      { root: scrollRoot, threshold: 0.42 },
+      {
+        root: scrollRoot,
+        threshold: [0, 0.18],
+      },
     );
 
     observer.observe(element);
     return () => observer.disconnect();
-  }, [isVisible]);
+  }, []);
 
   return (
     <section
       className={getOpeningCardClassName(card)}
+      data-tone={background.tone}
       data-visible={isVisible ? "true" : "false"}
       ref={cardRef}
-      style={{ "--event-accent": card.accent } as CSSProperties}
+      style={
+        {
+          "--event-accent": card.accent,
+          "--opening-card-blur": index === 0 ? "0px" : "8px",
+          "--opening-card-opacity": index === 0 ? 1 : 0.06,
+          "--opening-card-scale": index === 0 ? 1 : 0.986,
+          "--opening-bg-current": background.current,
+          "--opening-bg-end": background.end,
+          "--opening-bg-start": background.start,
+        } as CSSProperties
+      }
     >
       {card.kind === "closing" ? (
         <OpeningClosingBridge
@@ -492,7 +552,7 @@ function OpeningVisual({ card, index }: { card: OpeningCard; index: number }) {
   const youtubeEmbedUrl = getYouTubeEmbedUrl(card);
 
   return (
-    <figure>
+    <figure className={youtubeEmbedUrl ? "opening-card-visual opening-video-figure" : "opening-card-visual"}>
       {card.imageSrc ? (
         <Image
           alt={card.imageLabel ?? card.title}
@@ -507,7 +567,7 @@ function OpeningVisual({ card, index }: { card: OpeningCard; index: number }) {
       ) : youtubeEmbedUrl ? (
         <iframe
           allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          className="mx-auto aspect-[9/16] h-[78vh] max-h-[720px] w-auto max-w-full bg-black max-sm:h-[58svh]"
+          className="opening-video-frame bg-black"
           src={youtubeEmbedUrl}
           title={card.imageLabel ?? card.title}
         />
@@ -573,7 +633,7 @@ function OpeningTitleText({ title }: { title: string }) {
 
 function OpeningSourceLinks({ sources }: { sources: OpeningSource[] }) {
   return (
-    <figcaption className="mt-3 flex flex-wrap justify-end gap-x-2 gap-y-1 text-right font-mono text-[11px] font-black text-[#858176]">
+    <figcaption className="opening-source-links mt-3 flex flex-wrap justify-end gap-x-2 gap-y-1 text-right font-mono text-[11px] font-black text-[#858176]">
       <span>출처</span>
       {sources.map((source, index) => (
         <span key={`${source.label}-${source.url}`}>
@@ -596,6 +656,9 @@ function getOpeningCardClassName(card: OpeningCard) {
   if (card.kind === "closing") {
     return "opening-snap-card flex min-h-full items-center justify-center px-8 py-8 max-sm:px-3 max-sm:py-3";
   }
+  if (card.kind === "story" && card.mediaKind === "youtube") {
+    return "opening-snap-card grid min-h-full grid-cols-[minmax(420px,1.18fr)_minmax(0,0.82fr)] gap-12 px-12 py-10 max-lg:grid-cols-1 max-lg:gap-7 max-sm:gap-4 max-sm:px-3 max-sm:py-4";
+  }
   if (card.kind === "story" && hasOpeningVisual(card)) {
     return "opening-snap-card grid min-h-full grid-cols-[minmax(420px,1.18fr)_minmax(0,0.82fr)] gap-12 px-12 py-10 max-lg:grid-cols-1 max-lg:gap-7 max-sm:px-5 max-sm:py-6";
   }
@@ -603,6 +666,145 @@ function getOpeningCardClassName(card: OpeningCard) {
     return "opening-snap-card flex min-h-full flex-col justify-center px-12 py-14 max-sm:px-5 max-sm:py-8";
   }
   return "opening-snap-card flex min-h-full flex-col justify-center px-12 py-14 max-sm:px-5 max-sm:py-8";
+}
+
+function getOpeningBackground(index: number): OpeningBackground {
+  const current = getOpeningBackgroundStep(index);
+
+  return {
+    current: current.color,
+    end: current.color,
+    start: current.color,
+    tone: current.tone,
+  };
+}
+
+function getOpeningStageStyle(index: number): CSSProperties {
+  const background = getOpeningBackgroundStep(index);
+
+  return {
+    "--opening-stage-bg-bottom": background.color,
+    "--opening-stage-bg-top": background.color,
+  } as CSSProperties;
+}
+
+function getOpeningScrollProgress(scroller: HTMLDivElement) {
+  const cards = Array.from(scroller.querySelectorAll<HTMLElement>(".opening-snap-card"));
+  const scrollTop = scroller.scrollTop;
+  if (!cards.length) return 0;
+
+  for (let index = 0; index < cards.length - 1; index += 1) {
+    const current = cards[index].offsetTop;
+    const next = cards[index + 1].offsetTop;
+    if (scrollTop >= current && scrollTop <= next) {
+      const span = Math.max(1, next - current);
+      return index + (scrollTop - current) / span;
+    }
+  }
+
+  return cards.length - 1;
+}
+
+function updateOpeningCardFocus(scroller: HTMLDivElement) {
+  const rootTop = scroller.getBoundingClientRect().top;
+  const rootHeight = Math.max(1, scroller.clientHeight);
+  const cards = Array.from(scroller.querySelectorAll<HTMLElement>(".opening-snap-card"));
+
+  for (const card of cards) {
+    const topDelta = card.getBoundingClientRect().top - rootTop;
+    const distance = Math.abs(topDelta);
+    const focusRange = rootHeight * (topDelta < 0 ? 0.34 : 0.72);
+    const linearFocus = Math.max(0, Math.min(1, 1 - distance / focusRange));
+    const focus = Math.pow(linearFocus, topDelta < 0 ? 2.8 : 2.25);
+    card.style.setProperty("--opening-card-opacity", String(0.04 + focus * 0.96));
+    card.style.setProperty("--opening-card-scale", String(0.986 + focus * 0.014));
+    card.style.setProperty("--opening-card-blur", `${(1 - focus) * 8}px`);
+  }
+}
+
+function getOpeningInterpolatedBackground(progress: number): {
+  bottom: string;
+  top: string;
+} {
+  const maxIndex = openingStoryCards.length - 1;
+  const clamped = Math.max(0, Math.min(maxIndex, progress));
+
+  if (clamped >= maxIndex - 0.18) {
+    const amount = smoothStep((clamped - (maxIndex - 0.18)) / 0.18);
+    const color = mixHexColor("#050505", "#f7f5ef", amount);
+
+    return {
+      bottom: color,
+      top: color,
+    };
+  }
+
+  const baseIndex = Math.min(maxIndex, Math.floor(clamped));
+  const nextIndex = Math.min(maxIndex, baseIndex + 1);
+  const localProgress = clamped - baseIndex;
+  const from = getOpeningBackgroundStep(baseIndex).color;
+  const to = getOpeningBackgroundStep(nextIndex).color;
+  const eased = smoothStep(localProgress);
+  const spread = Math.sin(Math.PI * eased) * 0.22;
+
+  return {
+    bottom: mixHexColor(from, to, Math.min(1, eased + spread)),
+    top: mixHexColor(from, to, Math.max(0, eased - spread)),
+  };
+}
+
+function getOpeningBackgroundStep(index: number): {
+  color: string;
+  tone: OpeningBackground["tone"];
+} {
+  const screen = index + 1;
+
+  if (screen === 1 || screen === 23) {
+    return { color: "#f7f5ef", tone: "light" };
+  }
+
+  const darkeningProgress = Math.max(0, Math.min(1, (screen - 2) / 20));
+  const color = mixHexColorHex("#f1f0ea", "#050505", smoothStep(darkeningProgress));
+
+  return { color, tone: getOpeningToneForColor(color) };
+}
+
+function smoothStep(value: number) {
+  return value * value * (3 - 2 * value);
+}
+
+function mixHexColor(from: string, to: string, amount: number) {
+  const fromRgb = parseHexColor(from);
+  const toRgb = parseHexColor(to);
+  const mixed = fromRgb.map((fromChannel, index) =>
+    Math.round(fromChannel + (toRgb[index] - fromChannel) * amount),
+  );
+
+  return `rgb(${mixed[0]}, ${mixed[1]}, ${mixed[2]})`;
+}
+
+function mixHexColorHex(from: string, to: string, amount: number) {
+  const fromRgb = parseHexColor(from);
+  const toRgb = parseHexColor(to);
+  const mixed = fromRgb.map((fromChannel, index) =>
+    Math.round(fromChannel + (toRgb[index] - fromChannel) * amount),
+  );
+
+  return `#${mixed
+    .map((channel) => channel.toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+function getOpeningToneForColor(color: string): OpeningBackground["tone"] {
+  const [red, green, blue] = parseHexColor(color);
+  const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+
+  return luminance > 0.5 ? "light" : "dark";
+}
+
+function parseHexColor(value: string) {
+  const clean = value.replace("#", "");
+  return [0, 2, 4].map((start) => parseInt(clean.slice(start, start + 2), 16));
 }
 
 function getOpeningCopyClassName(card: OpeningCard) {
@@ -627,7 +829,7 @@ function getYouTubeEmbedUrl(card: OpeningCard) {
 
 function getOpeningTitleClassName(card: OpeningCard) {
   if (card.kind === "intro") {
-    return "mt-8 max-w-[900px] break-keep text-[clamp(34px,5.4vw,78px)] font-black leading-[1.03] tracking-normal text-[#f8f5ec] max-sm:text-[32px]";
+    return "mt-8 max-w-[900px] break-keep text-[clamp(34px,5.4vw,78px)] font-black leading-[1.16] tracking-normal text-[#f8f5ec] max-sm:text-[32px]";
   }
   if (card.kind === "closing") {
     return "mt-8 max-w-[980px] break-keep text-[clamp(42px,7vw,104px)] font-black leading-[0.98] tracking-normal text-[#f8f5ec] max-sm:text-[38px]";
@@ -956,7 +1158,7 @@ const closingAgendaChoices: OpeningAgendaChoice[] = [
   {
     agendaId: "rights-equality",
     imageSrc: "/jang.jpg",
-    label: "젠더 폭력",
+    label: "여성 살해",
   },
   {
     agendaId: "peace-palestine",
@@ -974,10 +1176,10 @@ const openingStoryCards: OpeningCard[] = [
       "벌써 7월이네요.",
       "2026년 상반기는 참 다사다난했습니다.",
       "",
-      "상반기에는 어떤 일이 있었는지",
+      "어떤 일이 있었는지",
       "한번 돌아볼까요?",
     ],
-    title: "다사다난했던 2026년 상반기,\n안녕하셨나요?",
+    title: "2026년 상반기,\n안녕하셨나요?",
   },
   {
     accent: "#c8b27a",
@@ -985,7 +1187,7 @@ const openingStoryCards: OpeningCard[] = [
     imageLabel: "오세훈 당선 사진",
     imageSrc: "/oh-win.jpg",
     kind: "story",
-    lines: ["오세훈 시장님, 당선 축하드립니다."],
+    lines: ["우선, 오세훈 시장님 당선 축하드립니다."],
     title: "지방선거를 치렀습니다.",
   },
   {
@@ -1067,7 +1269,7 @@ const openingStoryCards: OpeningCard[] = [
     imageLabel: "서울 서소문 고가도로 붕괴사고",
     imageSrc: "/seosomun.webp",
     kind: "story",
-    lines: ["서울 서소문 고가도로 붕괴사고로 3명이 세상을 떠나셨고,"],
+    lines: ["서울 서소문 고가도로 붕괴사고,"],
     sources: [
       {
         label: "한겨레",
@@ -1082,7 +1284,7 @@ const openingStoryCards: OpeningCard[] = [
     imageLabel: "한화에어로스페이스 폭발사고",
     imageSrc: "/hanwha.jpg",
     kind: "story",
-    lines: ["한화에어로스페이스 폭발사고로 5명이 세상을 떠나셨습니다."],
+    lines: ["한화에어로스페이스 폭발사고,"],
     sources: [
       {
         label: "연합뉴스",
@@ -1097,7 +1299,7 @@ const openingStoryCards: OpeningCard[] = [
     imageLabel: "쿠팡 노동자 사망 관련 보도",
     imageSrc: "/coupang.jpg",
     kind: "story",
-    lines: ["쿠팡에서는 26년 상반기 들어 2건의 사망 사건이 있었습니다."],
+    lines: ["쿠팡 노동자 사망사고."],
     sources: [
       {
         label: "매일노동뉴스",
@@ -1110,7 +1312,10 @@ const openingStoryCards: OpeningCard[] = [
     accent: "#d99b50",
     dateLabel: "산재와 원청 책임",
     kind: "section",
-    lines: ["산재 사건이 연달아 일어나면서 노동자의 안전에 대한 관심이 쏠렸습니다."],
+    lines: [
+      "잇따르는 산재 사고는",
+      "안전한 근로 환경에 대한 관심으로 이어졌습니다.",
+    ],
     title: "안전의 책임",
   },
   {
@@ -1121,9 +1326,8 @@ const openingStoryCards: OpeningCard[] = [
     kind: "story",
     lines: [
       "노동 환경의 안전 관리 주체는 누구인가,",
-      "하청업체 직원의 사망에 원청업체도 책임이 있다는 목소리가 커지는 가운데, 노란봉투법의 통과로 원청 교섭의 창구가 열리는 듯합니다.",
-      "",
-      "11년 만에 열린 원청 교섭의 창구는 과연 보다 안전한 근로환경을 만들 수 있을까요?",
+      "11년 만에 통과한 노란봉투법으로",
+      "하청업체 직원의 사망에 대해 원청업체의 책임을 물을 수 있게 되었습니다.",
     ],
     sources: [
       {
@@ -1139,8 +1343,10 @@ const openingStoryCards: OpeningCard[] = [
     imageLabel: "노란봉투법 책임 회피 설명서",
     kind: "story",
     lines: [
-      "최근, 경기도는 산하 기관에 '노란봉투법 책임 회피 설명서'를 제작해 뿌렸습니다.",
-      "민주노총은 실질적인 원청 교섭권 행사가 이뤄지지 않고 있다며, 7월 15일 총파업을 예고한 상황입니다.",
+      "노란봉투법 발의 얼마 후,",
+      "경기도는 산하 기관에 \"노란봉투법 회피 매뉴얼\"을 배포했습니다.",
+      "민주노총은 실질적인 원청 교섭권 행사가 이뤄지지 않고 있다며,",
+      "7월 15일 총파업을 예고한 상황입니다.",
     ],
     sources: [
       {
@@ -1152,14 +1358,14 @@ const openingStoryCards: OpeningCard[] = [
   },
   {
     accent: "#d97997",
-    dateLabel: "젠더 폭력",
+    dateLabel: "여성 살해",
     kind: "section",
     lines: [],
-    title: "젠더 폭력은 어땠나요.",
+    title: "젠더 문제는 좀 나아졌나요?",
   },
   {
     accent: "#d97997",
-    dateLabel: "젠더 폭력",
+    dateLabel: "여성 살해",
     imageLabel: "광주 장윤기 살인 사건",
     imageSrc: "/jang.jpg",
     kind: "story",
@@ -1174,7 +1380,7 @@ const openingStoryCards: OpeningCard[] = [
   },
   {
     accent: "#d97997",
-    dateLabel: "젠더 폭력",
+    dateLabel: "여성 살해",
     imageLabel: "남양주 스토킹 살인 사건",
     kind: "story",
     lines: ["남양주 스토킹 살인 사건,"],
@@ -1189,10 +1395,13 @@ const openingStoryCards: OpeningCard[] = [
   },
   {
     accent: "#d97997",
-    dateLabel: "젠더 폭력",
+    dateLabel: "여성 살해",
     imageLabel: "안산 성폭행 고소 피해자 사망 사건",
     kind: "story",
-    lines: ["안산 성폭행 고소 피해자 사망 사건 등 성폭력 사망 사건이 잇따르는 가운데,"],
+    lines: [
+      "안산 성폭행 고소 피해자 사망 사건 등",
+      "성폭력 사망 사건이 잇따랐습니다.",
+    ],
     mediaKind: "youtube",
     sources: [
       {
@@ -1222,8 +1431,8 @@ const openingStoryCards: OpeningCard[] = [
     dateLabel: "동의 없는 성폭력",
     kind: "story",
     lines: [
-      "헌법소원 청구인은 2022년 유사강간 상황에서 '75차례' 이상 거부 의사를 밝혔지만, 1심, 2심 법원은 무죄 판결을 내렸습니다.",
-      "75차례의 거부는 왜 동의 없음의 증거가 되지 못했을까요?",
+      "해당 헌법소원 청구인은 2022년 유사강간 상황에서 '75차례' 이상 거부 의사를 밝혔지만, 1심, 2심 법원은 무죄 판결을 내렸습니다.",
+      "75차례의 거부는 동의 없음의 증거가 되기에 충분하지 않았을까요?",
     ],
     title: "75차례의 거부",
   },
@@ -1232,7 +1441,7 @@ const openingStoryCards: OpeningCard[] = [
     dateLabel: "반전평화",
     kind: "section",
     lines: [],
-    title: "전쟁입니다.",
+    title: "매일이 전쟁입니다.",
   },
   {
     accent: "#7b8dd8",
@@ -1240,7 +1449,10 @@ const openingStoryCards: OpeningCard[] = [
     imageLabel: "호르무즈 해협과 나무호 피격 사건",
     imageSrc: "/namu.webp",
     kind: "story",
-    lines: ["호르무즈 해협에서는 이란과 미국의 갈등이 심화되는 와중에 한국 선박 나무호 피격 사건이 있었고,"],
+    lines: [
+      "미국-이란의 갈등 심화 국면에서",
+      "호르무즈 해협에서는 한국 선박이 피격당했고,",
+    ],
     sources: [
       {
         label: "굿뉴스1",
@@ -1255,7 +1467,10 @@ const openingStoryCards: OpeningCard[] = [
     imageLabel: "팔레스타인 가자지구 관련 보도",
     imageSrc: "/palestine.jpg",
     kind: "story",
-    lines: ["이스라엘의 공습으로 7만명이 넘는 팔레스타인인이 사망했습니다."],
+    lines: [
+      "팔레스타인에서는",
+      "7만명이 넘는 민간인이 공습으로 사망했습니다.",
+    ],
     sources: [
       {
         label: "가톨릭평화신문",
