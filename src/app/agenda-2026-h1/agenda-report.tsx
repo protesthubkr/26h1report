@@ -152,7 +152,6 @@ const OPENING_CHOICE_REVEAL_DELAY_MS = 4800;
 const OPENING_CHOICE_AFTER_REVEAL_INPUT_DELAY_MS = 850;
 const OPENING_CHOICE_INPUT_ARM_DELAY_MS =
   OPENING_CHOICE_REVEAL_DELAY_MS + OPENING_CHOICE_AFTER_REVEAL_INPUT_DELAY_MS;
-const OPENING_FINAL_REVEAL_DELAY_MS = 880;
 const OPENING_DEFAULT_CHROME_COLOR = "#f7f5ef";
 const THEME_COLOR_META_SELECTOR = 'meta[name="theme-color"]';
 
@@ -233,7 +232,6 @@ function OpeningCardScrollPage({
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const scrollAnimationFrameRef = useRef<number | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
-  const manualFinalTransitionReleaseTimerRef = useRef<number | null>(null);
   const previousOpeningScrollTopRef = useRef(0);
   const stableViewportWidthRef = useRef<number | null>(null);
   const topButtonRevealTimerRef = useRef<number | null>(null);
@@ -241,20 +239,18 @@ function OpeningCardScrollPage({
   const isPgDnHiddenRef = useRef(false);
   const isPgDnHintVisibleRef = useRef(true);
   const isFinalCardSettledRef = useRef(false);
-  const isFinalScrollTransitioningRef = useRef(false);
   const [isPgDnHidden, setIsPgDnHidden] = useState(false);
   const [isPgDnHintVisible, setIsPgDnHintVisible] = useState(true);
   const [finalSettledAt, setFinalSettledAt] = useState<number | null>(null);
   const [finalChoiceRevealForcedAt, setFinalChoiceRevealForcedAt] =
     useState<number | null>(null);
   const [isFinalCardSettled, setIsFinalCardSettled] = useState(false);
-  const [isFinalScrollTransitioning, setIsFinalScrollTransitioning] = useState(false);
   const [isTopButtonReady, setIsTopButtonReady] = useState(false);
 
-  const clearManualFinalTransitionReleaseTimer = useCallback(() => {
-    if (manualFinalTransitionReleaseTimerRef.current === null) return;
-    window.clearTimeout(manualFinalTransitionReleaseTimerRef.current);
-    manualFinalTransitionReleaseTimerRef.current = null;
+  const clearTopButtonRevealTimer = useCallback(() => {
+    if (topButtonRevealTimerRef.current === null) return;
+    window.clearTimeout(topButtonRevealTimerRef.current);
+    topButtonRevealTimerRef.current = null;
   }, []);
 
   const updateFloatingNavigation = useCallback((scroller: HTMLDivElement) => {
@@ -264,17 +260,14 @@ function OpeningCardScrollPage({
     const lastCard = snapCards.at(-1);
     if (!lastCard) return;
 
-    const isFinalTransitioning = isFinalScrollTransitioningRef.current;
     const shouldHide =
-      isFinalTransitioning ||
       scroller.scrollTop >= lastCard.offsetTop - scroller.clientHeight * 0.28;
     const shouldShowPgDnHint =
       !shouldHide && scroller.scrollTop <= scroller.clientHeight * 0.12;
-    const shouldSettle =
-      !isFinalTransitioning && isOpeningFinalCardReached(scroller, lastCard);
+    const shouldSettle = isOpeningFinalCardSettled(scroller, lastCard);
 
     if (shouldSettle) {
-      alignOpeningFinalCard(scroller, lastCard);
+      alignOpeningFinalCardIfClose(scroller, lastCard);
     }
 
     if (shouldHide !== isPgDnHiddenRef.current) {
@@ -298,43 +291,7 @@ function OpeningCardScrollPage({
       clearTopButtonRevealTimer();
       setIsTopButtonReady(false);
     }
-  }, []);
-
-  const beginFinalTransition = useCallback(() => {
-    clearManualFinalTransitionReleaseTimer();
-
-    if (isFinalScrollTransitioningRef.current) return;
-
-    setFinalScrollTransitioning(true);
-    isPgDnHiddenRef.current = true;
-    isPgDnHintVisibleRef.current = false;
-    isFinalCardSettledRef.current = false;
-    setIsPgDnHidden(true);
-    setIsPgDnHintVisible(false);
-    setFinalSettledAt(null);
-    setFinalChoiceRevealForcedAt(null);
-    setIsFinalCardSettled(false);
-    setIsTopButtonReady(false);
-  }, [clearManualFinalTransitionReleaseTimer]);
-
-  const releaseFinalTransition = useCallback(
-    (scroller: HTMLDivElement) => {
-      if (manualFinalTransitionReleaseTimerRef.current !== null) return;
-
-      const shouldReduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      const timer = window.setTimeout(
-        () => {
-          manualFinalTransitionReleaseTimerRef.current = null;
-          setFinalScrollTransitioning(false);
-          updateOpeningCardFocus(scroller);
-          updateFloatingNavigation(scroller);
-        },
-        shouldReduceMotion ? 0 : OPENING_FINAL_REVEAL_DELAY_MS,
-      );
-      manualFinalTransitionReleaseTimerRef.current = timer;
-    },
-    [updateFloatingNavigation],
-  );
+  }, [clearTopButtonRevealTimer]);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -362,48 +319,6 @@ function OpeningCardScrollPage({
       stage.style.setProperty("--opening-stable-vh", `${height}px`);
     };
 
-    const syncManualFinalScrollTransition = () => {
-      if (scrollAnimationFrameRef.current !== null) return;
-
-      const snapCards = Array.from(
-        scroller.querySelectorAll<HTMLElement>(".opening-snap-card"),
-      );
-      const previousCard = snapCards.at(-2);
-      const lastCard = snapCards.at(-1);
-      if (!previousCard || !lastCard) return;
-
-      const span = Math.max(1, lastCard.offsetTop - previousCard.offsetTop);
-      const progressToFinal = (scroller.scrollTop - previousCard.offsetTop) / span;
-      const finalSettleTolerance = getOpeningFinalCardSettleTolerance(scroller);
-      const isSettledOnFinal = isOpeningFinalCardReached(scroller, lastCard);
-      const isBetweenFinalCards =
-        !isSettledOnFinal && progressToFinal > 0.08 && progressToFinal < 0.985;
-      const isBeforeFinalTransition = progressToFinal <= 0.02;
-      const reachedFinalDirectly =
-        isSettledOnFinal &&
-        previousOpeningScrollTopRef.current < lastCard.offsetTop - finalSettleTolerance;
-
-      if (isSettledOnFinal) {
-        alignOpeningFinalCard(scroller, lastCard);
-      }
-
-      if (isSettledOnFinal && (isFinalScrollTransitioningRef.current || reachedFinalDirectly)) {
-        beginFinalTransition();
-        releaseFinalTransition(scroller);
-        return;
-      }
-
-      if (isBetweenFinalCards) {
-        beginFinalTransition();
-        return;
-      }
-
-      if (isBeforeFinalTransition && isFinalScrollTransitioningRef.current) {
-        clearManualFinalTransitionReleaseTimer();
-        setFinalScrollTransitioning(false);
-      }
-    };
-
     const updateBackground = () => {
       frame = 0;
       const progress = getOpeningScrollProgress(scroller);
@@ -411,7 +326,6 @@ function OpeningCardScrollPage({
       stage.style.setProperty("--opening-stage-bg-top", background.top);
       stage.style.setProperty("--opening-stage-bg-bottom", background.bottom);
       syncMobileChromeColor(background.top);
-      syncManualFinalScrollTransition();
       updateOpeningCardFocus(scroller);
       updateFloatingNavigation(scroller);
       previousOpeningScrollTopRef.current = scroller.scrollTop;
@@ -436,7 +350,7 @@ function OpeningCardScrollPage({
     };
 
     const forceFinalChoiceReveal = () => {
-      if (!isFinalCardSettledRef.current || isFinalScrollTransitioningRef.current) {
+      if (!isFinalCardSettledRef.current) {
         return;
       }
 
@@ -510,9 +424,7 @@ function OpeningCardScrollPage({
         window.cancelAnimationFrame(scrollAnimationFrameRef.current);
         scrollAnimationFrameRef.current = null;
       }
-      clearManualFinalTransitionReleaseTimer();
       syncMobileChromeColor(OPENING_DEFAULT_CHROME_COLOR);
-      isFinalScrollTransitioningRef.current = false;
       scroller.classList.remove("opening-scroll-snap-manual");
       scroller.removeEventListener("scroll", requestUpdate);
       scroller.removeEventListener("scrollend", updateBackground);
@@ -529,12 +441,7 @@ function OpeningCardScrollPage({
       window.removeEventListener("orientationchange", handleOrientationChange);
       window.visualViewport?.removeEventListener("resize", handleViewportResize);
     };
-  }, [
-    beginFinalTransition,
-    clearManualFinalTransitionReleaseTimer,
-    releaseFinalTransition,
-    updateFloatingNavigation,
-  ]);
+  }, [clearTopButtonRevealTimer, updateFloatingNavigation]);
 
   useEffect(() => {
     if (!isFinalCardSettled) return;
@@ -565,28 +472,13 @@ function OpeningCardScrollPage({
     longPressTimerRef.current = null;
   }
 
-  function clearTopButtonRevealTimer() {
-    if (topButtonRevealTimerRef.current === null) return;
-    window.clearTimeout(topButtonRevealTimerRef.current);
-    topButtonRevealTimerRef.current = null;
-  }
-
   function cancelOpeningScrollAnimation(scroller = scrollerRef.current) {
     if (scrollAnimationFrameRef.current !== null) {
       window.cancelAnimationFrame(scrollAnimationFrameRef.current);
       scrollAnimationFrameRef.current = null;
     }
 
-    clearManualFinalTransitionReleaseTimer();
-    setFinalScrollTransitioning(false);
     scroller?.classList.remove("opening-scroll-snap-manual");
-  }
-
-  function setFinalScrollTransitioning(nextValue: boolean) {
-    if (nextValue === isFinalScrollTransitioningRef.current) return;
-
-    isFinalScrollTransitioningRef.current = nextValue;
-    setIsFinalScrollTransitioning(nextValue);
   }
 
   function getMaxScrollTop(scroller: HTMLDivElement) {
@@ -597,22 +489,13 @@ function OpeningCardScrollPage({
     scroller: HTMLDivElement,
     targetTop: number,
     durationMs: number,
-    options: {
-      usePageTransition?: boolean;
-    } = {},
   ) {
     cancelOpeningScrollAnimation(scroller);
 
     const startTop = scroller.scrollTop;
     const finalTop = Math.max(0, Math.min(getMaxScrollTop(scroller), targetTop));
-    const isFinalTarget = finalTop >= getMaxScrollTop(scroller) - 2;
-    const usePageTransition = options.usePageTransition ?? isFinalTarget;
 
     if (Math.abs(finalTop - startTop) < 1) {
-      if (usePageTransition) {
-        beginFinalTransition();
-        releaseFinalTransition(scroller);
-      }
       scroller.scrollTop = finalTop;
       updateOpeningCardFocus(scroller);
       updateFloatingNavigation(scroller);
@@ -620,9 +503,6 @@ function OpeningCardScrollPage({
     }
 
     const startedAt = performance.now();
-    if (usePageTransition) {
-      beginFinalTransition();
-    }
     scroller.classList.add("opening-scroll-snap-manual");
 
     const step = (now: number) => {
@@ -638,13 +518,8 @@ function OpeningCardScrollPage({
       scroller.scrollTop = finalTop;
       scrollAnimationFrameRef.current = null;
       scroller.classList.remove("opening-scroll-snap-manual");
-      if (usePageTransition) {
-        releaseFinalTransition(scroller);
-      } else {
-        setFinalScrollTransitioning(false);
-        updateOpeningCardFocus(scroller);
-        updateFloatingNavigation(scroller);
-      }
+      updateOpeningCardFocus(scroller);
+      updateFloatingNavigation(scroller);
     };
 
     scrollAnimationFrameRef.current = window.requestAnimationFrame(step);
@@ -666,9 +541,7 @@ function OpeningCardScrollPage({
     const isLastCardTarget = Boolean(nextCard && lastCard && nextCard === lastCard);
 
     if (isLastCardTarget || targetTop >= getMaxScrollTop(scroller) - 2) {
-      animateOpeningScrollTo(scroller, targetTop, OPENING_LAST_CARD_SCROLL_MS, {
-        usePageTransition: true,
-      });
+      animateOpeningScrollTo(scroller, targetTop, OPENING_LAST_CARD_SCROLL_MS);
       return;
     }
 
@@ -689,9 +562,7 @@ function OpeningCardScrollPage({
     const lastCard = snapCards.at(-1);
     const targetTop = lastCard ? lastCard.offsetTop : getMaxScrollTop(scroller);
 
-    animateOpeningScrollTo(scroller, targetTop, OPENING_LAST_CARD_SCROLL_MS, {
-      usePageTransition: false,
-    });
+    animateOpeningScrollTo(scroller, targetTop, OPENING_LAST_CARD_SCROLL_MS);
   }
 
   function scrollToFirstCard() {
@@ -703,9 +574,7 @@ function OpeningCardScrollPage({
     setFinalChoiceRevealForcedAt(null);
     setIsFinalCardSettled(false);
     setIsTopButtonReady(false);
-    animateOpeningScrollTo(scroller, 0, OPENING_LONG_PRESS_SCROLL_MS, {
-      usePageTransition: true,
-    });
+    animateOpeningScrollTo(scroller, 0, OPENING_LONG_PRESS_SCROLL_MS);
   }
 
   function handlePgDnPointerDown() {
@@ -736,7 +605,6 @@ function OpeningCardScrollPage({
   return (
     <article
       className="opening-review-stage relative h-full w-full overflow-hidden"
-      data-final-transitioning={isFinalScrollTransitioning ? "true" : "false"}
       ref={stageRef}
       style={getOpeningStageStyle(0)}
     >
@@ -827,7 +695,8 @@ function OpeningScrollCard({
   const [isVisible, setIsVisible] = useState(index === 0);
   const background = getOpeningBackground(index);
   const hasVisual = hasOpeningVisual(card);
-  const shouldShowCard = card.kind === "closing" ? isFinalCardSettled : isVisible;
+  const shouldShowCard =
+    card.kind === "closing" ? isVisible || isFinalCardSettled : isVisible;
 
   useEffect(() => {
     const element = cardRef.current;
@@ -857,6 +726,9 @@ function OpeningScrollCard({
         card.kind === "closing" && finalChoiceRevealForcedAt !== null
           ? "forced"
           : undefined
+      }
+      data-closing-settled={
+        card.kind === "closing" && isFinalCardSettled ? "true" : undefined
       }
       ref={cardRef}
       style={
@@ -1121,7 +993,7 @@ function getOpeningChoiceKey(choice: OpeningAgendaChoice) {
 }
 
 function getOpeningTransitionDurationMs(theme: OpeningTransitionTheme) {
-  if (theme === "disabled") return 2580;
+  if (theme === "disabled") return 3200;
   if (theme === "pride") return 2700;
   if (theme === "palestine") return 3600;
   return 1180;
@@ -1356,40 +1228,32 @@ function getOpeningScrollProgress(scroller: HTMLDivElement) {
   return cards.length - 1;
 }
 
-function getOpeningFinalCardSettleTolerance(scroller: HTMLDivElement) {
-  return Math.max(24, Math.min(120, scroller.clientHeight * 0.14));
+function getOpeningFinalCardSnapTolerance(scroller: HTMLDivElement) {
+  return Math.max(2, Math.min(10, scroller.clientHeight * 0.012));
 }
 
-function isOpeningFinalCardReached(
+function isOpeningFinalCardSettled(
   scroller: HTMLDivElement,
   lastCard: HTMLElement,
 ) {
-  const tolerance = getOpeningFinalCardSettleTolerance(scroller);
+  const tolerance = getOpeningFinalCardSnapTolerance(scroller);
   const scrollTop = scroller.scrollTop;
-  const viewportBottom = scrollTop + scroller.clientHeight;
   const cardTop = lastCard.offsetTop;
-  const cardBottom = cardTop + lastCard.offsetHeight;
-  const visiblePx = Math.max(
-    0,
-    Math.min(viewportBottom, cardBottom) - Math.max(scrollTop, cardTop),
-  );
-  const visibleRatio =
-    visiblePx / Math.max(1, Math.min(scroller.clientHeight, lastCard.offsetHeight));
   const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
 
   return (
-    scrollTop >= cardTop ||
     Math.abs(scrollTop - cardTop) <= tolerance ||
-    maxScrollTop - scrollTop <= tolerance ||
-    visibleRatio >= 0.82
+    maxScrollTop - scrollTop <= tolerance
   );
 }
 
-function alignOpeningFinalCard(scroller: HTMLDivElement, lastCard: HTMLElement) {
-  if (scroller.scrollTop >= lastCard.offsetTop) return;
-
+function alignOpeningFinalCardIfClose(scroller: HTMLDivElement, lastCard: HTMLElement) {
   const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-  scroller.scrollTop = Math.min(lastCard.offsetTop, maxScrollTop);
+  const targetTop = Math.min(lastCard.offsetTop, maxScrollTop);
+  const distance = Math.abs(scroller.scrollTop - targetTop);
+  if (distance > getOpeningFinalCardSnapTolerance(scroller)) return;
+
+  scroller.scrollTop = targetTop;
 }
 
 function updateOpeningCardFocus(scroller: HTMLDivElement) {
