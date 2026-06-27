@@ -92,6 +92,7 @@ type OpeningCard = {
   accent: string;
   copyAlign?: "mobile-center";
   dateLabel: string;
+  delayedLines?: string[];
   imageSrc?: string;
   imageLabel?: string;
   kind?: "intro" | "section" | "story" | "closing";
@@ -123,6 +124,8 @@ type OpeningBackground = {
   tone: "light" | "dark";
 };
 
+type OpeningFinalTransitionDirection = "from-final" | "to-final";
+
 type PublicStatement = {
   date: string;
   organization: string;
@@ -146,6 +149,7 @@ type DateRange = {
 const OPENING_LAST_CARD_SCROLL_MS = 2200;
 const OPENING_LONG_PRESS_SCROLL_MS = 2800;
 const OPENING_CHOICE_REVEAL_DELAY_MS = 4800;
+const OPENING_FINAL_REVEAL_DELAY_MS = 880;
 
 export function AgendaReport({ data }: { data: PublicAgendaData }) {
   const [hasExitedOpening, setHasExitedOpening] = useState(false);
@@ -155,7 +159,7 @@ export function AgendaReport({ data }: { data: PublicAgendaData }) {
   return (
     <main className="h-[100dvh] overflow-hidden bg-transparent text-[#f1f0e8]">
       <section className="relative flex h-full min-h-0 flex-col">
-        <div className="relative flex min-h-0 flex-1 items-stretch overflow-hidden bg-[#090908]">
+        <div className="relative flex min-h-0 flex-1 items-stretch overflow-hidden bg-transparent">
           {hasExitedOpening ? (
             <AgendaWorkSurface theme={selectedTransitionTheme} />
           ) : (
@@ -191,17 +195,29 @@ function OpeningCardScrollPage({
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const scrollAnimationFrameRef = useRef<number | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
+  const manualFinalTransitionReleaseTimerRef = useRef<number | null>(null);
+  const previousOpeningScrollTopRef = useRef(0);
   const topButtonRevealTimerRef = useRef<number | null>(null);
   const didLongPressRef = useRef(false);
   const isPgDnHiddenRef = useRef(false);
   const isPgDnHintVisibleRef = useRef(true);
   const isFinalCardSettledRef = useRef(false);
   const isFinalScrollTransitioningRef = useRef(false);
+  const finalTransitionDirectionRef =
+    useRef<OpeningFinalTransitionDirection>("to-final");
   const [isPgDnHidden, setIsPgDnHidden] = useState(false);
   const [isPgDnHintVisible, setIsPgDnHintVisible] = useState(true);
   const [isFinalCardSettled, setIsFinalCardSettled] = useState(false);
   const [isFinalScrollTransitioning, setIsFinalScrollTransitioning] = useState(false);
+  const [finalTransitionDirection, setFinalTransitionDirection] =
+    useState<OpeningFinalTransitionDirection>("to-final");
   const [isTopButtonReady, setIsTopButtonReady] = useState(false);
+
+  const clearManualFinalTransitionReleaseTimer = useCallback(() => {
+    if (manualFinalTransitionReleaseTimerRef.current === null) return;
+    window.clearTimeout(manualFinalTransitionReleaseTimerRef.current);
+    manualFinalTransitionReleaseTimerRef.current = null;
+  }, []);
 
   const updateFloatingNavigation = useCallback((scroller: HTMLDivElement) => {
     const snapCards = Array.from(
@@ -240,12 +256,88 @@ function OpeningCardScrollPage({
     }
   }, []);
 
+  const beginFinalTransition = useCallback((direction: OpeningFinalTransitionDirection) => {
+    clearManualFinalTransitionReleaseTimer();
+
+    if (direction !== finalTransitionDirectionRef.current) {
+      finalTransitionDirectionRef.current = direction;
+      setFinalTransitionDirection(direction);
+    }
+
+    if (isFinalScrollTransitioningRef.current) return;
+
+    setFinalScrollTransitioning(true);
+    isPgDnHiddenRef.current = true;
+    isPgDnHintVisibleRef.current = false;
+    isFinalCardSettledRef.current = false;
+    setIsPgDnHidden(true);
+    setIsPgDnHintVisible(false);
+    setIsFinalCardSettled(false);
+    setIsTopButtonReady(false);
+  }, [clearManualFinalTransitionReleaseTimer]);
+
+  const releaseFinalTransition = useCallback(
+    (scroller: HTMLDivElement) => {
+      if (manualFinalTransitionReleaseTimerRef.current !== null) return;
+
+      const shouldReduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const timer = window.setTimeout(
+        () => {
+          manualFinalTransitionReleaseTimerRef.current = null;
+          setFinalScrollTransitioning(false);
+          updateOpeningCardFocus(scroller);
+          updateFloatingNavigation(scroller);
+        },
+        shouldReduceMotion ? 0 : OPENING_FINAL_REVEAL_DELAY_MS,
+      );
+      manualFinalTransitionReleaseTimerRef.current = timer;
+    },
+    [updateFloatingNavigation],
+  );
+
   useEffect(() => {
     const stage = stageRef.current;
     const scroller = scrollerRef.current;
     if (!stage || !scroller) return;
 
     let frame = 0;
+    previousOpeningScrollTopRef.current = scroller.scrollTop;
+
+    const syncManualFinalScrollTransition = () => {
+      if (scrollAnimationFrameRef.current !== null) return;
+
+      const snapCards = Array.from(
+        scroller.querySelectorAll<HTMLElement>(".opening-snap-card"),
+      );
+      const previousCard = snapCards.at(-2);
+      const lastCard = snapCards.at(-1);
+      if (!previousCard || !lastCard) return;
+
+      const span = Math.max(1, lastCard.offsetTop - previousCard.offsetTop);
+      const progressToFinal = (scroller.scrollTop - previousCard.offsetTop) / span;
+      const isBetweenFinalCards = progressToFinal > 0.08 && progressToFinal < 0.985;
+      const isSettledOnFinal = Math.abs(scroller.scrollTop - lastCard.offsetTop) <= 3;
+      const isBeforeFinalTransition = progressToFinal <= 0.02;
+      const isMovingUp = scroller.scrollTop < previousOpeningScrollTopRef.current;
+      const reachedFinalDirectly =
+        isSettledOnFinal && previousOpeningScrollTopRef.current < lastCard.offsetTop - 3;
+
+      if (isBetweenFinalCards) {
+        beginFinalTransition(isMovingUp ? "from-final" : "to-final");
+        return;
+      }
+
+      if (isSettledOnFinal && (isFinalScrollTransitioningRef.current || reachedFinalDirectly)) {
+        beginFinalTransition("to-final");
+        releaseFinalTransition(scroller);
+        return;
+      }
+
+      if (isBeforeFinalTransition && isFinalScrollTransitioningRef.current) {
+        clearManualFinalTransitionReleaseTimer();
+        setFinalScrollTransitioning(false);
+      }
+    };
 
     const updateBackground = () => {
       frame = 0;
@@ -253,8 +345,10 @@ function OpeningCardScrollPage({
       const background = getOpeningInterpolatedBackground(progress);
       stage.style.setProperty("--opening-stage-bg-top", background.top);
       stage.style.setProperty("--opening-stage-bg-bottom", background.bottom);
+      syncManualFinalScrollTransition();
       updateOpeningCardFocus(scroller);
       updateFloatingNavigation(scroller);
+      previousOpeningScrollTopRef.current = scroller.scrollTop;
     };
 
     const requestUpdate = () => {
@@ -273,13 +367,19 @@ function OpeningCardScrollPage({
         window.cancelAnimationFrame(scrollAnimationFrameRef.current);
         scrollAnimationFrameRef.current = null;
       }
+      clearManualFinalTransitionReleaseTimer();
       isFinalScrollTransitioningRef.current = false;
       scroller.classList.remove("opening-scroll-snap-manual");
       scroller.removeEventListener("scroll", requestUpdate);
       scroller.removeEventListener("scrollend", updateBackground);
       window.removeEventListener("resize", requestUpdate);
     };
-  }, [updateFloatingNavigation]);
+  }, [
+    beginFinalTransition,
+    clearManualFinalTransitionReleaseTimer,
+    releaseFinalTransition,
+    updateFloatingNavigation,
+  ]);
 
   useEffect(() => {
     if (!isFinalCardSettled) return;
@@ -322,6 +422,7 @@ function OpeningCardScrollPage({
       scrollAnimationFrameRef.current = null;
     }
 
+    clearManualFinalTransitionReleaseTimer();
     setFinalScrollTransitioning(false);
     scroller?.classList.remove("opening-scroll-snap-manual");
   }
@@ -341,7 +442,10 @@ function OpeningCardScrollPage({
     scroller: HTMLDivElement,
     targetTop: number,
     durationMs: number,
-    options: { usePageTransition?: boolean } = {},
+    options: {
+      transitionDirection?: OpeningFinalTransitionDirection;
+      usePageTransition?: boolean;
+    } = {},
   ) {
     cancelOpeningScrollAnimation(scroller);
 
@@ -349,8 +453,14 @@ function OpeningCardScrollPage({
     const finalTop = Math.max(0, Math.min(getMaxScrollTop(scroller), targetTop));
     const isFinalTarget = finalTop >= getMaxScrollTop(scroller) - 2;
     const usePageTransition = options.usePageTransition ?? isFinalTarget;
+    const transitionDirection =
+      options.transitionDirection ?? (finalTop < startTop ? "from-final" : "to-final");
 
     if (Math.abs(finalTop - startTop) < 1) {
+      if (usePageTransition) {
+        beginFinalTransition(transitionDirection);
+        releaseFinalTransition(scroller);
+      }
       scroller.scrollTop = finalTop;
       updateOpeningCardFocus(scroller);
       updateFloatingNavigation(scroller);
@@ -359,14 +469,7 @@ function OpeningCardScrollPage({
 
     const startedAt = performance.now();
     if (usePageTransition) {
-      setFinalScrollTransitioning(true);
-      isPgDnHiddenRef.current = true;
-      isPgDnHintVisibleRef.current = false;
-      isFinalCardSettledRef.current = false;
-      setIsPgDnHidden(true);
-      setIsPgDnHintVisible(false);
-      setIsFinalCardSettled(false);
-      setIsTopButtonReady(false);
+      beginFinalTransition(transitionDirection);
     }
     scroller.classList.add("opening-scroll-snap-manual");
 
@@ -382,10 +485,14 @@ function OpeningCardScrollPage({
 
       scroller.scrollTop = finalTop;
       scrollAnimationFrameRef.current = null;
-      setFinalScrollTransitioning(false);
       scroller.classList.remove("opening-scroll-snap-manual");
-      updateOpeningCardFocus(scroller);
-      updateFloatingNavigation(scroller);
+      if (usePageTransition) {
+        releaseFinalTransition(scroller);
+      } else {
+        setFinalScrollTransitioning(false);
+        updateOpeningCardFocus(scroller);
+        updateFloatingNavigation(scroller);
+      }
     };
 
     scrollAnimationFrameRef.current = window.requestAnimationFrame(step);
@@ -400,12 +507,17 @@ function OpeningCardScrollPage({
     );
     const currentTop = scroller.scrollTop;
     const nextCard = snapCards.find((snapCard) => snapCard.offsetTop > currentTop + 24);
+    const lastCard = snapCards.at(-1);
     const targetTop = nextCard
       ? nextCard.offsetTop
       : getMaxScrollTop(scroller);
+    const isLastCardTarget = Boolean(nextCard && lastCard && nextCard === lastCard);
 
-    if (targetTop >= getMaxScrollTop(scroller) - 2) {
-      animateOpeningScrollTo(scroller, targetTop, OPENING_LAST_CARD_SCROLL_MS);
+    if (isLastCardTarget || targetTop >= getMaxScrollTop(scroller) - 2) {
+      animateOpeningScrollTo(scroller, targetTop, OPENING_LAST_CARD_SCROLL_MS, {
+        transitionDirection: "to-final",
+        usePageTransition: true,
+      });
       return;
     }
 
@@ -433,6 +545,7 @@ function OpeningCardScrollPage({
     setIsFinalCardSettled(false);
     setIsTopButtonReady(false);
     animateOpeningScrollTo(scroller, 0, OPENING_LONG_PRESS_SCROLL_MS, {
+      transitionDirection: "to-final",
       usePageTransition: true,
     });
   }
@@ -465,6 +578,7 @@ function OpeningCardScrollPage({
   return (
     <article
       className="opening-review-stage relative h-full w-full overflow-hidden"
+      data-final-transition-direction={finalTransitionDirection}
       data-final-transitioning={isFinalScrollTransitioning ? "true" : "false"}
       ref={stageRef}
       style={getOpeningStageStyle(0)}
@@ -494,6 +608,7 @@ function OpeningCardScrollPage({
         className={`opening-pgdn-button${isPgDnHidden ? " opening-pgdn-button-hidden" : ""}`}
         disabled={isPgDnHidden}
         onClick={handlePgDnClick}
+        onContextMenu={(event) => event.preventDefault()}
         onPointerCancel={handlePgDnPointerEnd}
         onPointerDown={handlePgDnPointerDown}
         onPointerLeave={handlePgDnPointerEnd}
@@ -596,18 +711,18 @@ function OpeningScrollCard({
         />
       ) : hasVisual ? (
         <div className={getOpeningMediaGroupClassName(card)}>
-          <OpeningVisual card={card} index={index} />
+          <OpeningVisual card={card} index={index} isActive={isVisible} />
 
           <div className={getOpeningCopyClassName(card)}>
             <div className="opening-card-content">
               {card.kind === "story" ? (
-                <OpeningLines lines={card.lines} variant="story" />
+                <OpeningLines delayedLines={card.delayedLines} lines={card.lines} variant="story" />
               ) : (
                 <>
                   <h1 className={getOpeningTitleClassName(card)}>
                     <OpeningTitleText title={card.title} />
                   </h1>
-                  <OpeningLines lines={card.lines} />
+                  <OpeningLines delayedLines={card.delayedLines} lines={card.lines} />
                 </>
               )}
             </div>
@@ -617,13 +732,13 @@ function OpeningScrollCard({
         <div className={getOpeningCopyClassName(card)}>
           <div className="opening-card-content">
             {card.kind === "story" ? (
-              <OpeningLines lines={card.lines} variant="story" />
+              <OpeningLines delayedLines={card.delayedLines} lines={card.lines} variant="story" />
             ) : (
               <>
                 <h1 className={getOpeningTitleClassName(card)}>
                   <OpeningTitleText title={card.title} />
                 </h1>
-                <OpeningLines lines={card.lines} />
+                <OpeningLines delayedLines={card.delayedLines} lines={card.lines} />
               </>
             )}
           </div>
@@ -778,10 +893,26 @@ function OpeningTransitionPage({ theme }: { theme: OpeningTransitionTheme }) {
   );
 }
 
-function OpeningVisual({ card, index }: { card: OpeningCard; index: number }) {
+function OpeningVisual({
+  card,
+  index,
+  isActive,
+}: {
+  card: OpeningCard;
+  index: number;
+  isActive: boolean;
+}) {
   const youtubeEmbedUrl = getYouTubeEmbedUrl(card);
   const youtubeVideoId = getYouTubeVideoId(card);
   const imageSize = card.imageSrc ? getOpeningImageSize(card.imageSrc) : null;
+  const youtubeSrcDoc =
+    isActive && youtubeVideoId && youtubeEmbedUrl
+      ? getYouTubeSrcDoc({
+          embedUrl: youtubeEmbedUrl,
+          title: card.imageLabel ?? card.title,
+          videoId: youtubeVideoId,
+        })
+      : undefined;
 
   return (
     <figure className={youtubeEmbedUrl ? "opening-card-visual opening-video-figure" : "opening-card-visual"}>
@@ -801,16 +932,10 @@ function OpeningVisual({ card, index }: { card: OpeningCard; index: number }) {
           <iframe
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             className="opening-video-frame bg-black"
-            src={youtubeEmbedUrl}
-            srcDoc={
-              youtubeVideoId
-                ? getYouTubeSrcDoc({
-                    embedUrl: youtubeEmbedUrl,
-                    title: card.imageLabel ?? card.title,
-                    videoId: youtubeVideoId,
-                  })
-                : undefined
-            }
+            data-video-active={isActive ? "true" : "false"}
+            key={`${youtubeEmbedUrl}-${isActive ? "active" : "stopped"}`}
+            src={isActive ? youtubeEmbedUrl : "about:blank"}
+            srcDoc={youtubeSrcDoc}
             title={card.imageLabel ?? card.title}
           />
         ) : null}
@@ -821,13 +946,15 @@ function OpeningVisual({ card, index }: { card: OpeningCard; index: number }) {
 }
 
 function OpeningLines({
+  delayedLines = [],
   lines,
   variant = "body",
 }: {
+  delayedLines?: string[];
   lines: string[];
   variant?: "body" | "story";
 }) {
-  if (!lines.length) return null;
+  if (!lines.length && !delayedLines.length) return null;
 
   const className =
     variant === "story"
@@ -852,6 +979,11 @@ function OpeningLines({
           </span>
         );
       })}
+      {delayedLines.map((line, index) => (
+        <span className="opening-delayed-line" key={`delayed-${line}-${index}`}>
+          {line}
+        </span>
+      ))}
     </p>
   );
 }
@@ -900,10 +1032,10 @@ function getOpeningCardClassName(card: OpeningCard) {
     return "opening-snap-card flex min-h-full items-center justify-center px-8 py-8 max-sm:px-3 max-sm:py-3";
   }
   if (card.kind === "story" && card.mediaKind === "youtube") {
-    return "opening-snap-card flex min-h-full items-center justify-center px-12 py-10 max-sm:px-3 max-sm:py-4";
+    return "opening-snap-card opening-media-card flex min-h-full items-center justify-center px-12 py-10 max-sm:px-3 max-sm:py-4";
   }
   if (card.kind === "story" && hasOpeningVisual(card)) {
-    return "opening-snap-card flex min-h-full items-center justify-center px-12 py-10 max-sm:px-5 max-sm:py-6";
+    return "opening-snap-card opening-media-card flex min-h-full items-center justify-center px-12 py-10 max-sm:px-5 max-sm:py-6";
   }
   if (card.kind === "story") {
     return "opening-snap-card flex min-h-full flex-col justify-center px-12 py-14 max-sm:px-5 max-sm:py-8";
@@ -1221,7 +1353,7 @@ const closingAgendaChoices: OpeningAgendaChoice[] = [
   {
     agendaId: "disability-rights",
     imageSrc: "/junjang.jpg",
-    label: "왜 그들은 열차를 세웠을까",
+    label: "왜 그들은 다시 열차를 세울까",
     transitionTheme: "disabled",
   },
   {
@@ -1331,6 +1463,7 @@ const openingStoryCards: OpeningCard[] = [
     dateLabel: "지방선거 이후",
     imageLabel: "전장연 시위 관련 발언",
     kind: "story",
+    delayedLines: ["(아뇨, 오세훈 시장 당선 후부터 매주 합니다.)"],
     lines: ["전장연의 시위는 보기 어렵겠네요."],
     mediaKind: "youtube",
     sources: [
