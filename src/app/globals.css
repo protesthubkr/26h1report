@@ -1,13 +1,5 @@
 @import "tailwindcss";
 
-@font-face {
-  font-family: "Pretendard";
-  font-display: swap;
-  font-weight: 45 920;
-  src: url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/variable/woff2/PretendardVariable.woff2")
-    format("woff2");
-}
-
 :root {
   --background: #f5f5f2;
   --foreground: #101010;
@@ -16,8 +8,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic",
-    "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI",
+    ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
 }
 
@@ -28,8 +20,8 @@ body {
 }
 
 body {
-  font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic",
-    "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  font-family: "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI",
+    ui-sans-serif, system-ui, sans-serif;
   font-synthesis-weight: none;
   text-rendering: optimizeLegibility;
 }
@@ -219,9 +211,22 @@ button:disabled {
 
 .opening-closing-copy {
   opacity: 0;
+  pointer-events: none;
   top: 50%;
   transform: translateY(calc(-50% + 18px));
   z-index: 2;
+}
+
+.opening-closing-shell {
+  transition:
+    opacity 520ms cubic-bezier(0.22, 0.86, 0.22, 1),
+    transform 560ms cubic-bezier(0.76, 0, 0.22, 1);
+  will-change: opacity, transform;
+}
+
+.opening-closing-shell[data-transition="swipe"] {
+  opacity: 0;
+  transform: translateX(-112%);
 }
 
 .opening-choice-panel {
@@ -233,6 +238,43 @@ button:disabled {
 
 .opening-choice-grid {
   z-index: 1;
+}
+
+.opening-choice-header,
+.opening-choice-card {
+  transition:
+    opacity 360ms cubic-bezier(0.22, 0.86, 0.22, 1),
+    filter 360ms cubic-bezier(0.22, 0.86, 0.22, 1),
+    transform 520ms cubic-bezier(0.18, 0.86, 0.18, 1);
+  will-change: opacity, filter, transform;
+}
+
+.opening-closing-shell[data-transition="selected"] .opening-closing-copy,
+.opening-closing-shell[data-transition="swipe"] .opening-closing-copy,
+.opening-closing-shell[data-transition="selected"] .opening-choice-header,
+.opening-closing-shell[data-transition="swipe"] .opening-choice-header,
+.opening-closing-shell[data-transition="selected"] .opening-choice-card[data-selected="false"],
+.opening-closing-shell[data-transition="swipe"] .opening-choice-card[data-selected="false"] {
+  filter: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.opening-closing-shell[data-transition="selected"] .opening-choice-header,
+.opening-closing-shell[data-transition="swipe"] .opening-choice-header {
+  transform: translateY(-10px);
+}
+
+.opening-closing-shell[data-transition="selected"] .opening-choice-card[data-selected="true"],
+.opening-closing-shell[data-transition="swipe"] .opening-choice-card[data-selected="true"] {
+  opacity: 1;
+  transform: translateY(-5vh) scale(1.035);
+  z-index: 3;
+}
+
+.opening-closing-shell[data-transition="selected"] .opening-choice-card,
+.opening-closing-shell[data-transition="swipe"] .opening-choice-card {
+  pointer-events: none;
 }
 
 .opening-snap-card[data-visible="true"] .opening-closing-copy {
