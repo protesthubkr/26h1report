@@ -11,87 +11,12 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
-export type PublicAgendaData = {
-  agendas: PublicAgenda[];
-  defaultAgendaId: string;
-  featuredIssues: FeaturedIssue[];
-  generatedAt: string;
-  source: {
-    graphGeneratedAt?: string;
-    path: string;
-  };
-};
-
-type PublicAgenda = {
-  accent: string;
-  bridgeAgendaIds: string[];
-  closing: {
-    summary: string;
-    takeaways: string[];
-    title: string;
-  };
-  coreQuestion: string;
-  dateRange: DateRange;
-  id: string;
-  issueCount: number;
-  organizationCount: number;
-  organizations: string[];
-  phases: PublicAgendaPhase[];
-  secondaryAccent: string;
-  shortTitle: string;
-  sourceAgendaLabels: string[];
-  status: "draft" | "ready" | "supporting";
-  statementCount: number;
-  subtitle: string;
-  title: string;
-  topActions: CountedValue[];
-  topKeywords: CountedValue[];
-};
-
-type PublicAgendaPhase = {
-  dateRange: DateRange;
-  hiddenKeywords: string[];
-  id: string;
-  issueCount: number;
-  issues: PublicIssue[];
-  organizations: string[];
-  statementCount: number;
-  summary: string;
-  title: string;
-  transitionToNext?: string;
-};
-
-type PublicIssue = {
-  actionType: string;
-  date: string;
-  dateLabel: string;
-  endDate: string;
-  id: string;
-  keywords: string[];
-  leadSentence: string;
-  leafCount: number;
-  organizationLabel: string;
-  organizations: string[];
-  sourceUrls: string[];
-  statementCount: number;
-  statements: PublicStatement[];
-  title: string;
-};
-
-type FeaturedIssue = PublicIssue & {
-  agendaId: string;
-  agendaTitle: string;
-  phaseId: string;
-  phaseTitle: string;
-};
-
 type OpeningSource = {
   label: string;
   url: string;
 };
 
 type OpeningCard = {
-  accent: string;
   copyAlign?: "mobile-center";
   dateLabel: string;
   delayedLines?: string[];
@@ -119,41 +44,29 @@ type OpeningTransitionTheme =
   | "palestine"
   | "pride";
 
-type OpeningBackground = {
-  current: string;
-  end: string;
-  start: string;
-  tone: "light" | "dark";
-};
-
-type PublicStatement = {
-  date: string;
-  organization: string;
-  sentence: string;
-  sourceKey: string;
-  sourceType: string;
-  url: string;
-};
-
-type CountedValue = {
-  count: number;
-  label: string;
-};
-
-type DateRange = {
-  end: string;
-  label: string;
-  start: string;
-};
+type OpeningTone = "light" | "dark";
 
 const OPENING_LAST_CARD_SCROLL_MS = 2200;
 const OPENING_LONG_PRESS_SCROLL_MS = 2800;
+const OPENING_LONG_JUMP_CONTENT_FADE_MS = 240;
 const OPENING_CHOICE_REVEAL_DELAY_MS = 4800;
 const OPENING_CHOICE_AFTER_REVEAL_INPUT_DELAY_MS = 850;
 const OPENING_CHOICE_INPUT_ARM_DELAY_MS =
   OPENING_CHOICE_REVEAL_DELAY_MS + OPENING_CHOICE_AFTER_REVEAL_INPUT_DELAY_MS;
+const OPENING_CHOICE_GRID_MS = 720;
+const OPENING_CHOICE_FORCED_GRID_MS = 420;
+const OPENING_CLOSING_COPY_MS = 5200;
+const OPENING_TRANSITION_STAGE_MS = 460;
+const OPENING_TRANSITION_DURATIONS_MS: Record<OpeningTransitionTheme, number> = {
+  disabled: 3200,
+  election: 1180,
+  gender: 1180,
+  labor: 1180,
+  palestine: 3600,
+  pride: 2700,
+};
 
-export function AgendaReport({ data }: { data: PublicAgendaData }) {
+export function AgendaReport() {
   const [hasExitedOpening, setHasExitedOpening] = useState(false);
   const [selectedTransitionTheme, setSelectedTransitionTheme] =
     useState<OpeningTransitionTheme>("election");
@@ -166,7 +79,6 @@ export function AgendaReport({ data }: { data: PublicAgendaData }) {
             <AgendaWorkSurface theme={selectedTransitionTheme} />
           ) : (
             <OpeningCardScrollPage
-              agendas={data.agendas}
               cards={openingStoryCards}
               onSelectAgenda={(choice) => {
                 setSelectedTransitionTheme(choice.transitionTheme);
@@ -189,19 +101,16 @@ function AgendaWorkSurface({ theme }: { theme: OpeningTransitionTheme }) {
 }
 
 function OpeningCardScrollPage({
-  agendas,
   cards,
   onSelectAgenda,
 }: {
-  agendas: PublicAgenda[];
   cards: OpeningCard[];
-  onSelectAgenda: (choice: OpeningAgendaChoice & { agenda: PublicAgenda }) => void;
+  onSelectAgenda: (choice: OpeningAgendaChoice) => void;
 }) {
   const stageRef = useRef<HTMLElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const scrollAnimationFrameRef = useRef<number | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
-  const previousOpeningScrollTopRef = useRef(0);
   const stableViewportWidthRef = useRef<number | null>(null);
   const topButtonRevealTimerRef = useRef<number | null>(null);
   const didLongPressRef = useRef(false);
@@ -271,7 +180,6 @@ function OpeningCardScrollPage({
     let frame = 0;
     let pointerStartY: number | null = null;
     let touchStartY: number | null = null;
-    previousOpeningScrollTopRef.current = scroller.scrollTop;
 
     const syncStableViewportHeight = (force = false) => {
       const viewport = window.visualViewport;
@@ -292,12 +200,11 @@ function OpeningCardScrollPage({
     const updateBackground = () => {
       frame = 0;
       const progress = getOpeningScrollProgress(scroller);
-      const background = getOpeningInterpolatedBackground(progress);
+      const background = getOpeningInterpolatedBackground(progress, cards.length);
       stage.style.setProperty("--opening-stage-bg-top", background.top);
       stage.style.setProperty("--opening-stage-bg-bottom", background.bottom);
       updateOpeningCardFocus(scroller);
       updateFloatingNavigation(scroller);
-      previousOpeningScrollTopRef.current = scroller.scrollTop;
     };
 
     const requestUpdate = () => {
@@ -409,7 +316,7 @@ function OpeningCardScrollPage({
       window.removeEventListener("orientationchange", handleOrientationChange);
       window.visualViewport?.removeEventListener("resize", handleViewportResize);
     };
-  }, [clearTopButtonRevealTimer, updateFloatingNavigation]);
+  }, [cards.length, clearTopButtonRevealTimer, updateFloatingNavigation]);
 
   useEffect(() => {
     if (!isFinalCardSettled) return;
@@ -449,6 +356,18 @@ function OpeningCardScrollPage({
     scroller?.classList.remove("opening-scroll-snap-manual");
   }
 
+  function clearOpeningLongJumpVisibility() {
+    stageRef.current?.removeAttribute("data-long-jump");
+    scrollerRef.current
+      ?.querySelectorAll<HTMLElement>(
+        "[data-long-jump-current], [data-long-jump-final]",
+      )
+      .forEach((card) => {
+        card.removeAttribute("data-long-jump-current");
+        card.removeAttribute("data-long-jump-final");
+      });
+  }
+
   function getMaxScrollTop(scroller: HTMLDivElement) {
     return Math.max(0, scroller.scrollHeight - scroller.clientHeight);
   }
@@ -457,6 +376,7 @@ function OpeningCardScrollPage({
     scroller: HTMLDivElement,
     targetTop: number,
     durationMs: number,
+    onComplete?: () => void,
   ) {
     cancelOpeningScrollAnimation(scroller);
 
@@ -467,6 +387,7 @@ function OpeningCardScrollPage({
       scroller.scrollTop = finalTop;
       updateOpeningCardFocus(scroller);
       updateFloatingNavigation(scroller);
+      onComplete?.();
       return;
     }
 
@@ -488,6 +409,7 @@ function OpeningCardScrollPage({
       scroller.classList.remove("opening-scroll-snap-manual");
       updateOpeningCardFocus(scroller);
       updateFloatingNavigation(scroller);
+      onComplete?.();
     };
 
     scrollAnimationFrameRef.current = window.requestAnimationFrame(step);
@@ -496,6 +418,8 @@ function OpeningCardScrollPage({
   function scrollToNextCard() {
     const scroller = scrollerRef.current;
     if (!scroller) return;
+
+    clearOpeningLongJumpVisibility();
 
     const snapCards = Array.from(
       scroller.querySelectorAll<HTMLElement>(".opening-snap-card"),
@@ -520,7 +444,21 @@ function OpeningCardScrollPage({
     });
   }
 
-  function scrollToLastCard() {
+  function getCurrentOpeningSnapCard(snapCards: HTMLElement[]) {
+    const scroller = scrollerRef.current;
+    if (!scroller) return snapCards[0];
+
+    const rootTop = scroller.getBoundingClientRect().top;
+
+    return snapCards.reduce((closestCard, card) => {
+      const closestDistance = Math.abs(closestCard.getBoundingClientRect().top - rootTop);
+      const distance = Math.abs(card.getBoundingClientRect().top - rootTop);
+
+      return distance < closestDistance ? card : closestCard;
+    }, snapCards[0]);
+  }
+
+  function scrollToLastCard({ hideIntermediates = false } = {}) {
     const scroller = scrollerRef.current;
     if (!scroller) return;
 
@@ -530,7 +468,42 @@ function OpeningCardScrollPage({
     const lastCard = snapCards.at(-1);
     const targetTop = lastCard ? lastCard.offsetTop : getMaxScrollTop(scroller);
 
-    animateOpeningScrollTo(scroller, targetTop, OPENING_LAST_CARD_SCROLL_MS);
+    if (!hideIntermediates || !lastCard) {
+      clearOpeningLongJumpVisibility();
+      animateOpeningScrollTo(scroller, targetTop, OPENING_LAST_CARD_SCROLL_MS);
+      return;
+    }
+
+    const stage = stageRef.current;
+    const currentCard = getCurrentOpeningSnapCard(snapCards);
+
+    if (!stage || !currentCard) {
+      animateOpeningScrollTo(scroller, targetTop, OPENING_LAST_CARD_SCROLL_MS);
+      return;
+    }
+
+    clearOpeningLongJumpVisibility();
+    currentCard.setAttribute("data-long-jump-current", "true");
+    lastCard.setAttribute("data-long-jump-final", "true");
+
+    const completeJump = () => {
+      window.requestAnimationFrame(() => {
+        clearOpeningLongJumpVisibility();
+      });
+    };
+
+    const runJump = () => {
+      stage.setAttribute("data-long-jump", "running");
+      animateOpeningScrollTo(scroller, targetTop, OPENING_LAST_CARD_SCROLL_MS, completeJump);
+    };
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      runJump();
+      return;
+    }
+
+    stage.setAttribute("data-long-jump", "fading");
+    window.setTimeout(runJump, OPENING_LONG_JUMP_CONTENT_FADE_MS);
   }
 
   function scrollToFirstCard() {
@@ -538,6 +511,7 @@ function OpeningCardScrollPage({
     if (!scroller) return;
 
     isFinalCardSettledRef.current = false;
+    clearOpeningLongJumpVisibility();
     setFinalSettledAt(null);
     setFinalChoiceRevealForcedAt(null);
     setIsFinalCardSettled(false);
@@ -551,7 +525,7 @@ function OpeningCardScrollPage({
     clearLongPressTimer();
     longPressTimerRef.current = window.setTimeout(() => {
       didLongPressRef.current = true;
-      scrollToLastCard();
+      scrollToLastCard({ hideIntermediates: true });
       clearLongPressTimer();
     }, 620);
   }
@@ -576,12 +550,11 @@ function OpeningCardScrollPage({
     <article
       className="opening-review-stage relative h-full w-full overflow-hidden"
       ref={stageRef}
-      style={getOpeningStageStyle(0)}
+      style={getOpeningStageStyle()}
     >
       <div className="opening-scroll-snap h-full overflow-y-auto" ref={scrollerRef}>
         {cards.map((card, index) => (
           <OpeningScrollCard
-            agendas={agendas}
             card={card}
             finalChoiceRevealForcedAt={finalChoiceRevealForcedAt}
             finalSettledAt={finalSettledAt}
@@ -631,6 +604,7 @@ function OpeningCardScrollPage({
         onClick={scrollToFirstCard}
         type="button"
       >
+        <span aria-hidden="true" className="opening-top-button-bg" />
         <Image
           alt=""
           aria-hidden="true"
@@ -646,7 +620,6 @@ function OpeningCardScrollPage({
 }
 
 function OpeningScrollCard({
-  agendas,
   card,
   finalChoiceRevealForcedAt,
   finalSettledAt,
@@ -655,18 +628,17 @@ function OpeningScrollCard({
   onBeginAgendaTransition,
   onSelectAgenda,
 }: {
-  agendas: PublicAgenda[];
   card: OpeningCard;
   finalChoiceRevealForcedAt: number | null;
   finalSettledAt: number | null;
   index: number;
   isFinalCardSettled: boolean;
   onBeginAgendaTransition: () => void;
-  onSelectAgenda: (choice: OpeningAgendaChoice & { agenda: PublicAgenda }) => void;
+  onSelectAgenda: (choice: OpeningAgendaChoice) => void;
 }) {
   const cardRef = useRef<HTMLElement | null>(null);
   const [isVisible, setIsVisible] = useState(index === 0);
-  const background = getOpeningBackground(index);
+  const tone = getOpeningBackgroundStep(index).tone;
   const hasVisual = hasOpeningVisual(card);
   const shouldShowCard =
     card.kind === "closing" ? isVisible || isFinalCardSettled : isVisible;
@@ -693,7 +665,7 @@ function OpeningScrollCard({
   return (
     <section
       className={getOpeningCardClassName(card)}
-      data-tone={background.tone}
+      data-tone={tone}
       data-visible={shouldShowCard ? "true" : "false"}
       data-choice-reveal={
         card.kind === "closing" && finalChoiceRevealForcedAt !== null
@@ -706,19 +678,13 @@ function OpeningScrollCard({
       ref={cardRef}
       style={
         {
-          "--event-accent": card.accent,
-          "--opening-card-blur": "0px",
           "--opening-card-opacity": index === 0 ? 1 : 0.06,
           "--opening-card-scale": index === 0 ? 1 : 0.986,
-          "--opening-bg-current": background.current,
-          "--opening-bg-end": background.end,
-          "--opening-bg-start": background.start,
         } as CSSProperties
       }
     >
       {card.kind === "closing" ? (
         <OpeningClosingBridge
-          agendas={agendas}
           card={card}
           finalChoiceRevealForcedAt={finalChoiceRevealForcedAt}
           finalSettledAt={finalSettledAt}
@@ -729,44 +695,35 @@ function OpeningScrollCard({
       ) : hasVisual ? (
         <div className={getOpeningMediaGroupClassName(card)}>
           <OpeningVisual card={card} index={index} isActive={isVisible} />
-
-          <div className={getOpeningCopyClassName(card)}>
-            <div className="opening-card-content">
-              {card.kind === "story" ? (
-                <OpeningLines delayedLines={card.delayedLines} lines={card.lines} variant="story" />
-              ) : (
-                <>
-                  <h1 className={getOpeningTitleClassName(card)}>
-                    <OpeningTitleText title={card.title} />
-                  </h1>
-                  <OpeningLines delayedLines={card.delayedLines} lines={card.lines} />
-                </>
-              )}
-            </div>
-          </div>
+          <OpeningCardCopy card={card} />
         </div>
       ) : (
-        <div className={getOpeningCopyClassName(card)}>
-          <div className="opening-card-content">
-            {card.kind === "story" ? (
-              <OpeningLines delayedLines={card.delayedLines} lines={card.lines} variant="story" />
-            ) : (
-              <>
-                <h1 className={getOpeningTitleClassName(card)}>
-                  <OpeningTitleText title={card.title} />
-                </h1>
-                <OpeningLines delayedLines={card.delayedLines} lines={card.lines} />
-              </>
-            )}
-          </div>
-        </div>
+        <OpeningCardCopy card={card} />
       )}
     </section>
   );
 }
 
+function OpeningCardCopy({ card }: { card: OpeningCard }) {
+  return (
+    <div className={getOpeningCopyClassName(card)}>
+      <div className="opening-card-content">
+        {card.kind === "story" ? (
+          <OpeningLines delayedLines={card.delayedLines} lines={card.lines} variant="story" />
+        ) : (
+          <>
+            <h1 className={getOpeningTitleClassName(card)}>
+              <OpeningTitleText title={card.title} />
+            </h1>
+            <OpeningLines delayedLines={card.delayedLines} lines={card.lines} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function OpeningClosingBridge({
-  agendas,
   card,
   finalChoiceRevealForcedAt,
   finalSettledAt,
@@ -774,13 +731,12 @@ function OpeningClosingBridge({
   onBeginAgendaTransition,
   onSelectAgenda,
 }: {
-  agendas: PublicAgenda[];
   card: OpeningCard;
   finalChoiceRevealForcedAt: number | null;
   finalSettledAt: number | null;
   isFinalCardSettled: boolean;
   onBeginAgendaTransition: () => void;
-  onSelectAgenda: (choice: OpeningAgendaChoice & { agenda: PublicAgenda }) => void;
+  onSelectAgenda: (choice: OpeningAgendaChoice) => void;
 }) {
   const acceptedChoicePointerKeyRef = useRef<string | null>(null);
   const choiceInputArmTimerRef = useRef<number | null>(null);
@@ -791,15 +747,7 @@ function OpeningClosingBridge({
   const [transitionStage, setTransitionStage] = useState<"idle" | "selected" | "swipe">(
     "idle",
   );
-  const choices = closingAgendaChoices
-    .map((choice) => ({
-      ...choice,
-      agenda: agendas.find((agenda) => agenda.id === choice.agendaId),
-    }))
-    .filter(
-      (choice): choice is OpeningAgendaChoice & { agenda: PublicAgenda } =>
-      Boolean(choice.agenda),
-    );
+  const choices = closingAgendaChoices;
 
   useEffect(() => {
     const timers = transitionTimers.current;
@@ -866,7 +814,7 @@ function OpeningClosingBridge({
   }
 
   function handleChoiceClick(
-    choice: OpeningAgendaChoice & { agenda: PublicAgenda },
+    choice: OpeningAgendaChoice,
     event: ReactMouseEvent<HTMLButtonElement>,
   ) {
     const choiceKey = getOpeningChoiceKey(choice);
@@ -892,7 +840,7 @@ function OpeningClosingBridge({
     setTransitionStage("selected");
     const transitionDuration = getOpeningTransitionDurationMs(choice.transitionTheme);
     transitionTimers.current.push(
-      window.setTimeout(() => setTransitionStage("swipe"), 460),
+      window.setTimeout(() => setTransitionStage("swipe"), OPENING_TRANSITION_STAGE_MS),
       window.setTimeout(() => onSelectAgenda(choice), transitionDuration),
     );
   }
@@ -970,15 +918,13 @@ function getOpeningChoiceKey(choice: OpeningAgendaChoice) {
 }
 
 function getOpeningTransitionDurationMs(theme: OpeningTransitionTheme) {
-  if (theme === "disabled") return 3200;
-  if (theme === "pride") return 2700;
-  if (theme === "palestine") return 3600;
-  return 1180;
+  return OPENING_TRANSITION_DURATIONS_MS[theme];
 }
 
 function OpeningTransitionPage({ theme }: { theme: OpeningTransitionTheme }) {
   return (
     <div aria-hidden="true" className="opening-transition-page" data-theme={theme}>
+      <div aria-hidden="true" className="opening-transition-fill" data-theme={theme} />
       {theme === "disabled" ? (
         <Image
           alt=""
@@ -990,15 +936,20 @@ function OpeningTransitionPage({ theme }: { theme: OpeningTransitionTheme }) {
         />
       ) : null}
       {theme === "pride" ? (
-        <Image
-          alt=""
-          aria-hidden="true"
-          className="opening-transition-media opening-transition-media-pride"
-          height={860}
-          src="/pride.avif"
-          unoptimized
-          width={860}
-        />
+        <div aria-hidden="true" className="opening-transition-pride-layer">
+          <span className="opening-transition-pride-stripes" />
+          <span className="opening-transition-pride-flag">
+            <Image
+              alt=""
+              aria-hidden="true"
+              className="opening-transition-pride-image"
+              fill
+              sizes="100dvh"
+              src="/pride.avif"
+              unoptimized
+            />
+          </span>
+        </div>
       ) : null}
       {theme === "palestine" ? <div className="opening-transition-media opening-transition-media-palestine" /> : null}
     </div>
@@ -1149,9 +1100,6 @@ function getOpeningCardClassName(card: OpeningCard) {
   if (card.kind === "story" && hasOpeningVisual(card)) {
     return "opening-snap-card opening-media-card flex min-h-full items-center justify-center px-12 py-10 max-sm:px-5 max-sm:py-6";
   }
-  if (card.kind === "story") {
-    return "opening-snap-card flex min-h-full flex-col justify-center px-12 py-14 max-sm:px-5 max-sm:py-8";
-  }
   return "opening-snap-card flex min-h-full flex-col justify-center px-12 py-14 max-sm:px-5 max-sm:py-8";
 }
 
@@ -1166,21 +1114,14 @@ function getOpeningMediaGroupClassName(card: OpeningCard) {
   return `${base} grid-cols-[minmax(360px,1.08fr)_minmax(0,0.82fr)] gap-10 max-lg:grid-cols-1 max-lg:gap-3 max-sm:gap-3`;
 }
 
-function getOpeningBackground(index: number): OpeningBackground {
-  const current = getOpeningBackgroundStep(index);
+function getOpeningStageStyle(): CSSProperties {
+  const background = getOpeningBackgroundStep(0);
 
   return {
-    current: current.color,
-    end: current.color,
-    start: current.color,
-    tone: current.tone,
-  };
-}
-
-function getOpeningStageStyle(index: number): CSSProperties {
-  const background = getOpeningBackgroundStep(index);
-
-  return {
+    "--opening-choice-forced-grid-duration": `${OPENING_CHOICE_FORCED_GRID_MS}ms`,
+    "--opening-choice-grid-duration": `${OPENING_CHOICE_GRID_MS}ms`,
+    "--opening-choice-reveal-delay": `${OPENING_CHOICE_REVEAL_DELAY_MS}ms`,
+    "--opening-closing-copy-duration": `${OPENING_CLOSING_COPY_MS}ms`,
     "--opening-stage-bg-bottom": background.color,
     "--opening-stage-bg-top": background.color,
     height: "var(--opening-stable-vh, 100dvh)",
@@ -1246,7 +1187,6 @@ function updateOpeningCardFocus(scroller: HTMLDivElement) {
     const focus = perceptualFadeFocus(linearFocus, topDelta < 0);
     card.style.setProperty("--opening-card-opacity", String(focus));
     card.style.setProperty("--opening-card-scale", String(0.986 + focus * 0.014));
-    card.style.setProperty("--opening-card-blur", "0px");
   }
 }
 
@@ -1258,11 +1198,11 @@ function perceptualFadeFocus(linearFocus: number, isLeaving: boolean) {
   return normalized ** gamma;
 }
 
-function getOpeningInterpolatedBackground(progress: number): {
+function getOpeningInterpolatedBackground(progress: number, cardCount: number): {
   bottom: string;
   top: string;
 } {
-  const maxIndex = openingStoryCards.length - 1;
+  const maxIndex = Math.max(0, cardCount - 1);
   const clamped = Math.max(0, Math.min(maxIndex, progress));
 
   const baseIndex = Math.min(maxIndex, Math.floor(clamped));
@@ -1291,7 +1231,7 @@ function getOpeningInterpolatedBackground(progress: number): {
 
 function getOpeningBackgroundStep(index: number): {
   color: string;
-  tone: OpeningBackground["tone"];
+  tone: OpeningTone;
 } {
   const screen = index + 1;
 
@@ -1384,7 +1324,7 @@ function linearToSrgb(value: number) {
   return Math.round(channel * 255);
 }
 
-function getOpeningToneForColor(color: string): OpeningBackground["tone"] {
+function getOpeningToneForColor(color: string): OpeningTone {
   const [red, green, blue] = parseHexColor(color);
   const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
 
@@ -1530,7 +1470,6 @@ const closingAgendaChoices: OpeningAgendaChoice[] = [
 
 const openingStoryCards: OpeningCard[] = [
   {
-    accent: "#f1f0e8",
     dateLabel: "상반기 회고",
     kind: "intro",
     lines: [
@@ -1543,7 +1482,6 @@ const openingStoryCards: OpeningCard[] = [
     title: "2026년 상반기,\n안녕하셨나요?",
   },
   {
-    accent: "#c8b27a",
     dateLabel: "6월 3일",
     imageLabel: "오세훈 당선 사진",
     imageSrc: "/oh-win.jpg",
@@ -1552,7 +1490,6 @@ const openingStoryCards: OpeningCard[] = [
     title: "지방선거를 치렀습니다.",
   },
   {
-    accent: "#c8b27a",
     dateLabel: "지방선거",
     imageLabel: '오세훈 "정원오 토론하자"',
     imageSrc: "/oh-debate.png",
@@ -1567,7 +1504,6 @@ const openingStoryCards: OpeningCard[] = [
     title: "조용한 선거",
   },
   {
-    accent: "#c8b27a",
     dateLabel: "지방선거",
     imageLabel: "서울시장 후보 TV토론",
     kind: "story",
@@ -1588,7 +1524,6 @@ const openingStoryCards: OpeningCard[] = [
     title: "한 번의 토론",
   },
   {
-    accent: "#a7b0ff",
     copyAlign: "mobile-center",
     dateLabel: "지방선거 이후",
     imageLabel: "서울광장 퀴어퍼레이드 관련 발언",
@@ -1604,7 +1539,6 @@ const openingStoryCards: OpeningCard[] = [
     title: "서울광장",
   },
   {
-    accent: "#a7b0ff",
     copyAlign: "mobile-center",
     dateLabel: "지방선거 이후",
     imageLabel: "전장연 시위 관련 발언",
@@ -1621,14 +1555,12 @@ const openingStoryCards: OpeningCard[] = [
     title: "전장연",
   },
   {
-    accent: "#b84d47",
     dateLabel: "노동안전·공공안전",
     kind: "section",
     lines: [],
     title: "비극적인 사고도 많았습니다.",
   },
   {
-    accent: "#b84d47",
     dateLabel: "공공안전",
     imageLabel: "서울 서소문 고가도로 붕괴사고",
     imageSrc: "/seosomun.webp",
@@ -1643,7 +1575,6 @@ const openingStoryCards: OpeningCard[] = [
     title: "서소문 붕괴사고",
   },
   {
-    accent: "#b84d47",
     dateLabel: "노동안전",
     imageLabel: "한화에어로스페이스 폭발사고",
     imageSrc: "/hanwha.jpg",
@@ -1658,7 +1589,6 @@ const openingStoryCards: OpeningCard[] = [
     title: "한화에어로스페이스",
   },
   {
-    accent: "#b84d47",
     dateLabel: "노동안전",
     imageLabel: "쿠팡 노동자 사망 관련 보도",
     imageSrc: "/coupang.jpg",
@@ -1673,7 +1603,6 @@ const openingStoryCards: OpeningCard[] = [
     title: "쿠팡",
   },
   {
-    accent: "#d99b50",
     dateLabel: "산재와 원청 책임",
     kind: "section",
     lines: [
@@ -1683,7 +1612,6 @@ const openingStoryCards: OpeningCard[] = [
     title: "안전의 책임",
   },
   {
-    accent: "#d99b50",
     dateLabel: "원청 교섭",
     imageLabel: "노란봉투법과 원청 책임",
     imageSrc: "/nobong.jpg",
@@ -1702,7 +1630,6 @@ const openingStoryCards: OpeningCard[] = [
     title: "노란봉투법",
   },
   {
-    accent: "#d99b50",
     dateLabel: "노란봉투법 이후",
     imageLabel: "노란봉투법 책임 회피 설명서",
     kind: "story",
@@ -1721,14 +1648,12 @@ const openingStoryCards: OpeningCard[] = [
     title: "책임 회피와 총파업",
   },
   {
-    accent: "#d97997",
     dateLabel: "여성 살해",
     kind: "section",
     lines: [],
     title: "젠더 문제는 좀 나아졌나요?",
   },
   {
-    accent: "#d97997",
     dateLabel: "여성 살해",
     imageLabel: "광주 장윤기 살인 사건",
     imageSrc: "/jang.jpg",
@@ -1743,7 +1668,6 @@ const openingStoryCards: OpeningCard[] = [
     title: "광주",
   },
   {
-    accent: "#d97997",
     copyAlign: "mobile-center",
     dateLabel: "여성 살해",
     imageLabel: "남양주 스토킹 살인 사건",
@@ -1759,7 +1683,6 @@ const openingStoryCards: OpeningCard[] = [
     title: "남양주",
   },
   {
-    accent: "#d97997",
     copyAlign: "mobile-center",
     dateLabel: "여성 살해",
     imageLabel: "안산 성폭행 고소 피해자 사망 사건",
@@ -1778,7 +1701,6 @@ const openingStoryCards: OpeningCard[] = [
     title: "안산",
   },
   {
-    accent: "#d97997",
     dateLabel: "동의 없는 성폭력",
     imageLabel: "성폭력 재판소원 관련 보도",
     imageSrc: "/court.jpg",
@@ -1793,7 +1715,6 @@ const openingStoryCards: OpeningCard[] = [
     title: "재판소원",
   },
   {
-    accent: "#d97997",
     dateLabel: "동의 없는 성폭력",
     kind: "story",
     lines: [
@@ -1803,14 +1724,12 @@ const openingStoryCards: OpeningCard[] = [
     title: "75차례의 거부",
   },
   {
-    accent: "#7b8dd8",
     dateLabel: "반전평화",
     kind: "section",
     lines: [],
     title: "매일이 전쟁입니다.",
   },
   {
-    accent: "#7b8dd8",
     dateLabel: "호르무즈 해협",
     imageLabel: "호르무즈 해협과 나무호 피격 사건",
     imageSrc: "/namu.webp",
@@ -1828,7 +1747,6 @@ const openingStoryCards: OpeningCard[] = [
     title: "호르무즈 해협",
   },
   {
-    accent: "#7b8dd8",
     dateLabel: "팔레스타인",
     imageLabel: "팔레스타인 가자지구 관련 보도",
     imageSrc: "/palestine.jpg",
@@ -1846,7 +1764,6 @@ const openingStoryCards: OpeningCard[] = [
     title: "가자",
   },
   {
-    accent: "#f1f0e8",
     dateLabel: "다음",
     kind: "closing",
     lines: ["돌아보니 무척 암울한 상반기였네요.", "이런 현실은 바뀔 수 있을까요?"],
