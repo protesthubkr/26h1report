@@ -511,7 +511,24 @@ button:disabled {
   transform: rotate(180deg);
 }
 
-.agenda-work-surface,
+.agenda-work-surface {
+  background: #050505;
+  isolation: isolate;
+  overflow: hidden;
+  position: relative;
+}
+
+.agenda-work-surface-fill {
+  background: #050505;
+  clip-path: inset(
+    env(safe-area-inset-top) env(safe-area-inset-right)
+      env(safe-area-inset-bottom) env(safe-area-inset-left)
+  );
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
 .opening-transition-page {
   background: #050505;
   clip-path: inset(
@@ -520,16 +537,16 @@ button:disabled {
   );
 }
 
-.agenda-work-surface[data-theme="election"],
+.agenda-work-surface-fill[data-theme="election"],
 .opening-transition-page[data-theme="election"] {
   background: rgb(255, 221, 0);
 }
 
-.agenda-work-surface[data-theme="disabled"] {
+.agenda-work-surface-fill[data-theme="disabled"] {
   background: rgb(88, 88, 88);
 }
 
-.agenda-work-surface[data-theme="pride"] {
+.agenda-work-surface-fill[data-theme="pride"] {
   background: #ffffff;
 }
 
@@ -537,17 +554,17 @@ button:disabled {
   background: #ffffff;
 }
 
-.agenda-work-surface[data-theme="labor"],
+.agenda-work-surface-fill[data-theme="labor"],
 .opening-transition-page[data-theme="labor"] {
   background: rgb(220, 36, 31);
 }
 
-.agenda-work-surface[data-theme="gender"],
+.agenda-work-surface-fill[data-theme="gender"],
 .opening-transition-page[data-theme="gender"] {
   background: rgb(145, 70, 201);
 }
 
-.agenda-work-surface[data-theme="palestine"] {
+.agenda-work-surface-fill[data-theme="palestine"] {
   background: #ffffff;
 }
 

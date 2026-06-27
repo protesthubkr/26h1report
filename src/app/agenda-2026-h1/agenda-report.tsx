@@ -181,7 +181,11 @@ export function AgendaReport({ data }: { data: PublicAgendaData }) {
 }
 
 function AgendaWorkSurface({ theme }: { theme: OpeningTransitionTheme }) {
-  return <article aria-label="어젠다 작업면" className="agenda-work-surface h-full w-full" data-theme={theme} />;
+  return (
+    <article aria-label="어젠다 작업면" className="agenda-work-surface h-full w-full">
+      <div aria-hidden="true" className="agenda-work-surface-fill" data-theme={theme} />
+    </article>
+  );
 }
 
 function OpeningCardScrollPage({
