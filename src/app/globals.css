@@ -32,6 +32,43 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+html::before,
+html::after,
+body::before,
+body::after {
+  background: #050505;
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  z-index: 2147483647;
+}
+
+body::before {
+  height: env(safe-area-inset-top);
+  inset: 0 0 auto;
+}
+
+body::after {
+  bottom: 0;
+  height: env(safe-area-inset-bottom);
+  left: 0;
+  right: 0;
+}
+
+html::before {
+  bottom: 0;
+  left: 0;
+  top: 0;
+  width: env(safe-area-inset-left);
+}
+
+html::after {
+  bottom: 0;
+  right: 0;
+  top: 0;
+  width: env(safe-area-inset-right);
+}
+
 button,
 input {
   font: inherit;
