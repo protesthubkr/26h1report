@@ -71,16 +71,7 @@ button:disabled {
 }
 
 @keyframes opening-closing-copy {
-  0% {
-    opacity: 0;
-    transform: translateY(calc(-50% + 18px));
-  }
-
-  16% {
-    opacity: 1;
-    transform: translateY(-50%);
-  }
-
+  0%,
   68% {
     opacity: 1;
     transform: translateY(-50%);
@@ -104,6 +95,18 @@ button:disabled {
     filter: blur(0);
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+@keyframes opening-closing-copy-skip {
+  from {
+    opacity: 1;
+    transform: translateY(-50%);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(calc(-50% - 72px));
   }
 }
 
@@ -303,7 +306,7 @@ button:disabled {
 }
 
 .opening-review-stage::after {
-  background: var(--opening-final-transition-color, #f7f5ef);
+  background: #050505;
   content: "";
   inset: 0;
   opacity: 0;
@@ -313,20 +316,16 @@ button:disabled {
   z-index: 55;
 }
 
-.opening-review-stage[data-final-transition-direction="to-final"] {
-  --opening-final-transition-color: #f7f5ef;
-}
-
-.opening-review-stage[data-final-transition-direction="from-final"] {
-  --opening-final-transition-color: #050505;
-}
-
 .opening-review-stage[data-final-transitioning="true"]::after {
   opacity: 1;
 }
 
 .opening-snap-card > * {
   transition: opacity 520ms cubic-bezier(0.2, 0.78, 0.16, 1);
+}
+
+.opening-snap-card > .opening-closing-stage {
+  transition: none;
 }
 
 .opening-review-stage[data-final-transitioning="true"] .opening-snap-card > *,
@@ -464,6 +463,8 @@ button:disabled {
 }
 
 .opening-top-button {
+  background: #f7f5ef;
+  border-color: rgba(255, 255, 255, 0.42);
   top: max(18px, env(safe-area-inset-top));
   transition:
     opacity 720ms cubic-bezier(0.2, 0.78, 0.16, 1),
@@ -509,6 +510,7 @@ button:disabled {
 }
 
 .opening-top-icon {
+  filter: none;
   transform: rotate(180deg);
 }
 
@@ -769,6 +771,16 @@ button:disabled {
 .opening-snap-card[data-visible="true"] .opening-choice-panel {
   animation: opening-choice-grid 720ms cubic-bezier(0.2, 0.78, 0.16, 1)
     4.8s forwards;
+}
+
+.opening-snap-card[data-visible="true"][data-choice-reveal="forced"] .opening-closing-copy {
+  animation: opening-closing-copy-skip 360ms cubic-bezier(0.2, 0.78, 0.16, 1)
+    forwards;
+}
+
+.opening-snap-card[data-visible="true"][data-choice-reveal="forced"] .opening-choice-panel {
+  animation: opening-choice-grid 420ms cubic-bezier(0.2, 0.78, 0.16, 1)
+    forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {

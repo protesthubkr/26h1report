@@ -126,8 +126,6 @@ type OpeningBackground = {
   tone: "light" | "dark";
 };
 
-type OpeningFinalTransitionDirection = "from-final" | "to-final";
-
 type PublicStatement = {
   date: string;
   organization: string;
@@ -151,7 +149,9 @@ type DateRange = {
 const OPENING_LAST_CARD_SCROLL_MS = 2200;
 const OPENING_LONG_PRESS_SCROLL_MS = 2800;
 const OPENING_CHOICE_REVEAL_DELAY_MS = 4800;
-const OPENING_CHOICE_INPUT_ARM_DELAY_MS = OPENING_CHOICE_REVEAL_DELAY_MS + 850;
+const OPENING_CHOICE_AFTER_REVEAL_INPUT_DELAY_MS = 850;
+const OPENING_CHOICE_INPUT_ARM_DELAY_MS =
+  OPENING_CHOICE_REVEAL_DELAY_MS + OPENING_CHOICE_AFTER_REVEAL_INPUT_DELAY_MS;
 const OPENING_FINAL_REVEAL_DELAY_MS = 880;
 const OPENING_DEFAULT_CHROME_COLOR = "#f7f5ef";
 const THEME_COLOR_META_SELECTOR = 'meta[name="theme-color"]';
@@ -242,15 +242,13 @@ function OpeningCardScrollPage({
   const isPgDnHintVisibleRef = useRef(true);
   const isFinalCardSettledRef = useRef(false);
   const isFinalScrollTransitioningRef = useRef(false);
-  const finalTransitionDirectionRef =
-    useRef<OpeningFinalTransitionDirection>("to-final");
   const [isPgDnHidden, setIsPgDnHidden] = useState(false);
   const [isPgDnHintVisible, setIsPgDnHintVisible] = useState(true);
   const [finalSettledAt, setFinalSettledAt] = useState<number | null>(null);
+  const [finalChoiceRevealForcedAt, setFinalChoiceRevealForcedAt] =
+    useState<number | null>(null);
   const [isFinalCardSettled, setIsFinalCardSettled] = useState(false);
   const [isFinalScrollTransitioning, setIsFinalScrollTransitioning] = useState(false);
-  const [finalTransitionDirection, setFinalTransitionDirection] =
-    useState<OpeningFinalTransitionDirection>("to-final");
   const [isTopButtonReady, setIsTopButtonReady] = useState(false);
 
   const clearManualFinalTransitionReleaseTimer = useCallback(() => {
@@ -294,6 +292,7 @@ function OpeningCardScrollPage({
     isFinalCardSettledRef.current = shouldSettle;
     setIsFinalCardSettled(shouldSettle);
     setFinalSettledAt(shouldSettle ? performance.now() : null);
+    setFinalChoiceRevealForcedAt(null);
 
     if (!shouldSettle) {
       clearTopButtonRevealTimer();
@@ -301,13 +300,8 @@ function OpeningCardScrollPage({
     }
   }, []);
 
-  const beginFinalTransition = useCallback((direction: OpeningFinalTransitionDirection) => {
+  const beginFinalTransition = useCallback(() => {
     clearManualFinalTransitionReleaseTimer();
-
-    if (direction !== finalTransitionDirectionRef.current) {
-      finalTransitionDirectionRef.current = direction;
-      setFinalTransitionDirection(direction);
-    }
 
     if (isFinalScrollTransitioningRef.current) return;
 
@@ -318,6 +312,7 @@ function OpeningCardScrollPage({
     setIsPgDnHidden(true);
     setIsPgDnHintVisible(false);
     setFinalSettledAt(null);
+    setFinalChoiceRevealForcedAt(null);
     setIsFinalCardSettled(false);
     setIsTopButtonReady(false);
   }, [clearManualFinalTransitionReleaseTimer]);
@@ -347,6 +342,8 @@ function OpeningCardScrollPage({
     if (!stage || !scroller) return;
 
     let frame = 0;
+    let pointerStartY: number | null = null;
+    let touchStartY: number | null = null;
     previousOpeningScrollTopRef.current = scroller.scrollTop;
 
     const syncStableViewportHeight = (force = false) => {
@@ -382,7 +379,6 @@ function OpeningCardScrollPage({
       const isBetweenFinalCards =
         !isSettledOnFinal && progressToFinal > 0.08 && progressToFinal < 0.985;
       const isBeforeFinalTransition = progressToFinal <= 0.02;
-      const isMovingUp = scroller.scrollTop < previousOpeningScrollTopRef.current;
       const reachedFinalDirectly =
         isSettledOnFinal &&
         previousOpeningScrollTopRef.current < lastCard.offsetTop - finalSettleTolerance;
@@ -392,13 +388,13 @@ function OpeningCardScrollPage({
       }
 
       if (isSettledOnFinal && (isFinalScrollTransitioningRef.current || reachedFinalDirectly)) {
-        beginFinalTransition("to-final");
+        beginFinalTransition();
         releaseFinalTransition(scroller);
         return;
       }
 
       if (isBetweenFinalCards) {
-        beginFinalTransition(isMovingUp ? "from-final" : "to-final");
+        beginFinalTransition();
         return;
       }
 
@@ -439,10 +435,71 @@ function OpeningCardScrollPage({
       }, 120);
     };
 
+    const forceFinalChoiceReveal = () => {
+      if (!isFinalCardSettledRef.current || isFinalScrollTransitioningRef.current) {
+        return;
+      }
+
+      clearTopButtonRevealTimer();
+      setIsTopButtonReady(true);
+      setFinalChoiceRevealForcedAt((current) => current ?? performance.now());
+    };
+
+    const handleFinalDownGesture = (distance: number) => {
+      if (distance <= 18) return;
+      forceFinalChoiceReveal();
+    };
+
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY <= 8) return;
+      forceFinalChoiceReveal();
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      pointerStartY =
+        event.pointerType === "touch" || event.pointerType === "pen"
+          ? event.clientY
+          : null;
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (pointerStartY === null) return;
+
+      handleFinalDownGesture(pointerStartY - event.clientY);
+    };
+
+    const clearPointerStart = () => {
+      pointerStartY = null;
+    };
+
+    const handleTouchStart = (event: TouchEvent) => {
+      touchStartY = event.touches[0]?.clientY ?? null;
+    };
+
+    const handleTouchMove = (event: TouchEvent) => {
+      const currentY = event.touches[0]?.clientY;
+      if (touchStartY === null || currentY === undefined) return;
+
+      handleFinalDownGesture(touchStartY - currentY);
+    };
+
+    const clearTouchStart = () => {
+      touchStartY = null;
+    };
+
     syncStableViewportHeight(true);
     updateBackground();
     scroller.addEventListener("scroll", requestUpdate, { passive: true });
     scroller.addEventListener("scrollend", updateBackground);
+    scroller.addEventListener("wheel", handleWheel, { passive: true });
+    scroller.addEventListener("pointerdown", handlePointerDown, { passive: true });
+    scroller.addEventListener("pointermove", handlePointerMove, { passive: true });
+    scroller.addEventListener("pointercancel", clearPointerStart);
+    scroller.addEventListener("pointerup", clearPointerStart);
+    scroller.addEventListener("touchstart", handleTouchStart, { passive: true });
+    scroller.addEventListener("touchmove", handleTouchMove, { passive: true });
+    scroller.addEventListener("touchcancel", clearTouchStart);
+    scroller.addEventListener("touchend", clearTouchStart);
     window.addEventListener("resize", handleViewportResize);
     window.addEventListener("orientationchange", handleOrientationChange);
     window.visualViewport?.addEventListener("resize", handleViewportResize);
@@ -459,6 +516,15 @@ function OpeningCardScrollPage({
       scroller.classList.remove("opening-scroll-snap-manual");
       scroller.removeEventListener("scroll", requestUpdate);
       scroller.removeEventListener("scrollend", updateBackground);
+      scroller.removeEventListener("wheel", handleWheel);
+      scroller.removeEventListener("pointerdown", handlePointerDown);
+      scroller.removeEventListener("pointermove", handlePointerMove);
+      scroller.removeEventListener("pointercancel", clearPointerStart);
+      scroller.removeEventListener("pointerup", clearPointerStart);
+      scroller.removeEventListener("touchstart", handleTouchStart);
+      scroller.removeEventListener("touchmove", handleTouchMove);
+      scroller.removeEventListener("touchcancel", clearTouchStart);
+      scroller.removeEventListener("touchend", clearTouchStart);
       window.removeEventListener("resize", handleViewportResize);
       window.removeEventListener("orientationchange", handleOrientationChange);
       window.visualViewport?.removeEventListener("resize", handleViewportResize);
@@ -532,7 +598,6 @@ function OpeningCardScrollPage({
     targetTop: number,
     durationMs: number,
     options: {
-      transitionDirection?: OpeningFinalTransitionDirection;
       usePageTransition?: boolean;
     } = {},
   ) {
@@ -542,12 +607,10 @@ function OpeningCardScrollPage({
     const finalTop = Math.max(0, Math.min(getMaxScrollTop(scroller), targetTop));
     const isFinalTarget = finalTop >= getMaxScrollTop(scroller) - 2;
     const usePageTransition = options.usePageTransition ?? isFinalTarget;
-    const transitionDirection =
-      options.transitionDirection ?? (finalTop < startTop ? "from-final" : "to-final");
 
     if (Math.abs(finalTop - startTop) < 1) {
       if (usePageTransition) {
-        beginFinalTransition(transitionDirection);
+        beginFinalTransition();
         releaseFinalTransition(scroller);
       }
       scroller.scrollTop = finalTop;
@@ -558,7 +621,7 @@ function OpeningCardScrollPage({
 
     const startedAt = performance.now();
     if (usePageTransition) {
-      beginFinalTransition(transitionDirection);
+      beginFinalTransition();
     }
     scroller.classList.add("opening-scroll-snap-manual");
 
@@ -604,7 +667,6 @@ function OpeningCardScrollPage({
 
     if (isLastCardTarget || targetTop >= getMaxScrollTop(scroller) - 2) {
       animateOpeningScrollTo(scroller, targetTop, OPENING_LAST_CARD_SCROLL_MS, {
-        transitionDirection: "to-final",
         usePageTransition: true,
       });
       return;
@@ -638,10 +700,10 @@ function OpeningCardScrollPage({
 
     isFinalCardSettledRef.current = false;
     setFinalSettledAt(null);
+    setFinalChoiceRevealForcedAt(null);
     setIsFinalCardSettled(false);
     setIsTopButtonReady(false);
     animateOpeningScrollTo(scroller, 0, OPENING_LONG_PRESS_SCROLL_MS, {
-      transitionDirection: "to-final",
       usePageTransition: true,
     });
   }
@@ -674,7 +736,6 @@ function OpeningCardScrollPage({
   return (
     <article
       className="opening-review-stage relative h-full w-full overflow-hidden"
-      data-final-transition-direction={finalTransitionDirection}
       data-final-transitioning={isFinalScrollTransitioning ? "true" : "false"}
       ref={stageRef}
       style={getOpeningStageStyle(0)}
@@ -684,6 +745,7 @@ function OpeningCardScrollPage({
           <OpeningScrollCard
             agendas={agendas}
             card={card}
+            finalChoiceRevealForcedAt={finalChoiceRevealForcedAt}
             finalSettledAt={finalSettledAt}
             index={index}
             isFinalCardSettled={isFinalCardSettled}
@@ -747,6 +809,7 @@ function OpeningCardScrollPage({
 function OpeningScrollCard({
   agendas,
   card,
+  finalChoiceRevealForcedAt,
   finalSettledAt,
   index,
   isFinalCardSettled,
@@ -754,6 +817,7 @@ function OpeningScrollCard({
 }: {
   agendas: PublicAgenda[];
   card: OpeningCard;
+  finalChoiceRevealForcedAt: number | null;
   finalSettledAt: number | null;
   index: number;
   isFinalCardSettled: boolean;
@@ -789,6 +853,11 @@ function OpeningScrollCard({
       className={getOpeningCardClassName(card)}
       data-tone={background.tone}
       data-visible={shouldShowCard ? "true" : "false"}
+      data-choice-reveal={
+        card.kind === "closing" && finalChoiceRevealForcedAt !== null
+          ? "forced"
+          : undefined
+      }
       ref={cardRef}
       style={
         {
@@ -806,6 +875,7 @@ function OpeningScrollCard({
         <OpeningClosingBridge
           agendas={agendas}
           card={card}
+          finalChoiceRevealForcedAt={finalChoiceRevealForcedAt}
           finalSettledAt={finalSettledAt}
           isFinalCardSettled={isFinalCardSettled}
           onSelectAgenda={onSelectAgenda}
@@ -852,12 +922,14 @@ function OpeningScrollCard({
 function OpeningClosingBridge({
   agendas,
   card,
+  finalChoiceRevealForcedAt,
   finalSettledAt,
   isFinalCardSettled,
   onSelectAgenda,
 }: {
   agendas: PublicAgenda[];
   card: OpeningCard;
+  finalChoiceRevealForcedAt: number | null;
   finalSettledAt: number | null;
   isFinalCardSettled: boolean;
   onSelectAgenda: (choice: OpeningAgendaChoice & { agenda: PublicAgenda }) => void;
@@ -900,6 +972,10 @@ function OpeningClosingBridge({
     }
 
     const shouldReduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const inputArmDelay =
+      finalChoiceRevealForcedAt === null
+        ? OPENING_CHOICE_INPUT_ARM_DELAY_MS
+        : OPENING_CHOICE_AFTER_REVEAL_INPUT_DELAY_MS;
     const timer = window.setTimeout(
       () => {
         setChoiceInputArmedForSettledAt(finalSettledAt);
@@ -907,7 +983,7 @@ function OpeningClosingBridge({
           choiceInputArmTimerRef.current = null;
         }
       },
-      shouldReduceMotion ? 0 : OPENING_CHOICE_INPUT_ARM_DELAY_MS,
+      shouldReduceMotion ? 0 : inputArmDelay,
     );
     choiceInputArmTimerRef.current = timer;
 
@@ -917,7 +993,7 @@ function OpeningClosingBridge({
         choiceInputArmTimerRef.current = null;
       }
     };
-  }, [finalSettledAt, isFinalCardSettled, transitionStage]);
+  }, [finalChoiceRevealForcedAt, finalSettledAt, isFinalCardSettled, transitionStage]);
 
   const isChoiceInputArmed =
     finalSettledAt !== null &&
@@ -1378,8 +1454,12 @@ function getOpeningBackgroundStep(index: number): {
 } {
   const screen = index + 1;
 
-  if (screen === 1 || screen === 23) {
+  if (screen === 1) {
     return { color: "#f7f5ef", tone: "light" };
+  }
+
+  if (screen === 23) {
+    return { color: "#050505", tone: "dark" };
   }
 
   const darkeningProgress = Math.max(0, Math.min(1, (screen - 2) / 20));
