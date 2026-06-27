@@ -92,6 +92,7 @@ type OpeningSource = {
 
 type OpeningCard = {
   accent: string;
+  copyAlign?: "center";
   dateLabel: string;
   imageSrc?: string;
   imageLabel?: string;
@@ -566,29 +567,32 @@ function OpeningClosingBridge({
 
 function OpeningVisual({ card, index }: { card: OpeningCard; index: number }) {
   const youtubeEmbedUrl = getYouTubeEmbedUrl(card);
+  const imageSize = card.imageSrc ? getOpeningImageSize(card.imageSrc) : null;
 
   return (
     <figure className={youtubeEmbedUrl ? "opening-card-visual opening-video-figure" : "opening-card-visual"}>
-      {card.imageSrc ? (
-        <Image
-          alt={card.imageLabel ?? card.title}
-          className="h-auto max-h-[72vh] w-full object-contain"
-          height={820}
-          priority={index <= 2}
-          sizes="(max-width: 1024px) 100vw, 56vw"
-          src={card.imageSrc}
-          unoptimized
-          width={1200}
-        />
-      ) : youtubeEmbedUrl ? (
-        <iframe
-          allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          className="opening-video-frame bg-black"
-          src={youtubeEmbedUrl}
-          title={card.imageLabel ?? card.title}
-        />
-      ) : null}
-      {card.sources?.length ? <OpeningSourceLinks sources={card.sources} /> : null}
+      <div className="opening-media-frame">
+        {card.imageSrc && imageSize ? (
+          <Image
+            alt={card.imageLabel ?? card.title}
+            className="block h-auto max-h-[72vh] w-full object-contain"
+            height={imageSize.height}
+            priority={index <= 2}
+            sizes="(max-width: 1024px) 100vw, 56vw"
+            src={card.imageSrc}
+            unoptimized
+            width={imageSize.width}
+          />
+        ) : youtubeEmbedUrl ? (
+          <iframe
+            allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            className="opening-video-frame bg-black"
+            src={youtubeEmbedUrl}
+            title={card.imageLabel ?? card.title}
+          />
+        ) : null}
+        {card.sources?.length ? <OpeningSourceLinks sources={card.sources} /> : null}
+      </div>
     </figure>
   );
 }
@@ -649,7 +653,7 @@ function OpeningTitleText({ title }: { title: string }) {
 
 function OpeningSourceLinks({ sources }: { sources: OpeningSource[] }) {
   return (
-    <figcaption className="opening-source-links mt-3 flex flex-wrap justify-end gap-x-2 gap-y-1 text-right font-mono text-[11px] font-black text-[#858176]">
+    <figcaption className="opening-source-links flex flex-wrap justify-end gap-x-2 gap-y-1 text-right font-mono text-[11px] font-black text-[#858176]">
       <span>출처</span>
       {sources.map((source, index) => (
         <span key={`${source.label}-${source.url}`}>
@@ -886,8 +890,13 @@ function parseHexColor(value: string) {
 }
 
 function getOpeningCopyClassName(card: OpeningCard) {
-  if (card.kind === "story" && hasOpeningVisual(card)) return "flex min-h-0 flex-col justify-center";
-  return "max-w-[980px]";
+  const alignClass = card.copyAlign === "center" ? "items-center text-center" : "";
+
+  if (card.kind === "story" && hasOpeningVisual(card)) {
+    return `flex min-h-0 flex-col justify-center ${alignClass}`.trim();
+  }
+
+  return `max-w-[980px] ${alignClass}`.trim();
 }
 
 function hasOpeningVisual(card: OpeningCard) {
@@ -903,6 +912,28 @@ function getYouTubeEmbedUrl(card: OpeningCard) {
     ? `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1&playsinline=1&controls=0&fs=0&iv_load_policy=3&disablekb=1`
     : null;
 }
+
+function getOpeningImageSize(src: string) {
+  return openingImageSizes[src] ?? { height: 820, width: 1200 };
+}
+
+const openingImageSizes: Record<string, { height: number; width: number }> = {
+  "/coupang.jpg": { height: 608, width: 1080 },
+  "/court.jpg": { height: 493, width: 658 },
+  "/fukushima.jpg": { height: 293, width: 560 },
+  "/haecho.webp": { height: 526, width: 700 },
+  "/hanwha.jpg": { height: 800, width: 1200 },
+  "/jang.jpg": { height: 1165, width: 1800 },
+  "/junjang.jpg": { height: 720, width: 960 },
+  "/namu.webp": { height: 582, width: 970 },
+  "/nobong-protest.jpeg": { height: 540, width: 960 },
+  "/nobong.jpg": { height: 640, width: 960 },
+  "/oh-debate.png": { height: 1130, width: 1392 },
+  "/oh-win.jpg": { height: 720, width: 1280 },
+  "/palestine.jpg": { height: 279, width: 425 },
+  "/queer.jpg": { height: 800, width: 1200 },
+  "/seosomun.webp": { height: 582, width: 970 },
+};
 
 
 function getOpeningTitleClassName(card: OpeningCard) {
@@ -1306,6 +1337,7 @@ const openingStoryCards: OpeningCard[] = [
   },
   {
     accent: "#a7b0ff",
+    copyAlign: "center",
     dateLabel: "지방선거 이후",
     imageLabel: "서울광장 퀴어퍼레이드 관련 발언",
     kind: "story",
@@ -1321,6 +1353,7 @@ const openingStoryCards: OpeningCard[] = [
   },
   {
     accent: "#a7b0ff",
+    copyAlign: "center",
     dateLabel: "지방선거 이후",
     imageLabel: "전장연 시위 관련 발언",
     kind: "story",
@@ -1458,6 +1491,7 @@ const openingStoryCards: OpeningCard[] = [
   },
   {
     accent: "#d97997",
+    copyAlign: "center",
     dateLabel: "여성 살해",
     imageLabel: "남양주 스토킹 살인 사건",
     kind: "story",
@@ -1473,6 +1507,7 @@ const openingStoryCards: OpeningCard[] = [
   },
   {
     accent: "#d97997",
+    copyAlign: "center",
     dateLabel: "여성 살해",
     imageLabel: "안산 성폭행 고소 피해자 사망 사건",
     kind: "story",
