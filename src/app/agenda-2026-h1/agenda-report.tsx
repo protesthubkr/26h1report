@@ -713,13 +713,21 @@ function updateOpeningCardFocus(scroller: HTMLDivElement) {
   for (const card of cards) {
     const topDelta = card.getBoundingClientRect().top - rootTop;
     const distance = Math.abs(topDelta);
-    const focusRange = rootHeight * (topDelta < 0 ? 0.34 : 0.72);
+    const focusRange = rootHeight * (topDelta < 0 ? 0.1 : 0.34);
     const linearFocus = Math.max(0, Math.min(1, 1 - distance / focusRange));
-    const focus = Math.pow(linearFocus, topDelta < 0 ? 2.8 : 2.25);
-    card.style.setProperty("--opening-card-opacity", String(0.04 + focus * 0.96));
+    const focus = perceptualFadeFocus(linearFocus, topDelta < 0);
+    card.style.setProperty("--opening-card-opacity", String(focus));
     card.style.setProperty("--opening-card-scale", String(0.986 + focus * 0.014));
     card.style.setProperty("--opening-card-blur", `${(1 - focus) * 8}px`);
   }
+}
+
+function perceptualFadeFocus(linearFocus: number, isLeaving: boolean) {
+  const start = isLeaving ? 0.72 : 0.78;
+  const gamma = isLeaving ? 9.5 : 7.2;
+  const normalized = Math.max(0, Math.min(1, (linearFocus - start) / (1 - start)));
+
+  return normalized ** gamma;
 }
 
 function getOpeningInterpolatedBackground(progress: number): {
@@ -731,7 +739,7 @@ function getOpeningInterpolatedBackground(progress: number): {
 
   if (clamped >= maxIndex - 0.18) {
     const amount = smoothStep((clamped - (maxIndex - 0.18)) / 0.18);
-    const color = mixHexColor("#050505", "#f7f5ef", amount);
+    const color = mixOklabColor("#050505", "#f7f5ef", amount);
 
     return {
       bottom: color,
@@ -748,8 +756,8 @@ function getOpeningInterpolatedBackground(progress: number): {
   const spread = Math.sin(Math.PI * eased) * 0.22;
 
   return {
-    bottom: mixHexColor(from, to, Math.min(1, eased + spread)),
-    top: mixHexColor(from, to, Math.max(0, eased - spread)),
+    bottom: mixOklabColor(from, to, Math.min(1, eased + spread)),
+    top: mixOklabColor(from, to, Math.max(0, eased - spread)),
   };
 }
 
@@ -764,7 +772,7 @@ function getOpeningBackgroundStep(index: number): {
   }
 
   const darkeningProgress = Math.max(0, Math.min(1, (screen - 2) / 20));
-  const color = mixHexColorHex("#f1f0ea", "#050505", smoothStep(darkeningProgress));
+  const color = mixOklabColorHex("#f1f0ea", "#050505", darkeningProgress);
 
   return { color, tone: getOpeningToneForColor(color) };
 }
@@ -773,26 +781,69 @@ function smoothStep(value: number) {
   return value * value * (3 - 2 * value);
 }
 
-function mixHexColor(from: string, to: string, amount: number) {
-  const fromRgb = parseHexColor(from);
-  const toRgb = parseHexColor(to);
-  const mixed = fromRgb.map((fromChannel, index) =>
-    Math.round(fromChannel + (toRgb[index] - fromChannel) * amount),
-  );
+function mixOklabColor(from: string, to: string, amount: number) {
+  const mixed = mixOklab(from, to, amount);
 
   return `rgb(${mixed[0]}, ${mixed[1]}, ${mixed[2]})`;
 }
 
-function mixHexColorHex(from: string, to: string, amount: number) {
-  const fromRgb = parseHexColor(from);
-  const toRgb = parseHexColor(to);
-  const mixed = fromRgb.map((fromChannel, index) =>
-    Math.round(fromChannel + (toRgb[index] - fromChannel) * amount),
-  );
-
-  return `#${mixed
+function mixOklabColorHex(from: string, to: string, amount: number) {
+  return `#${mixOklab(from, to, amount)
     .map((channel) => channel.toString(16).padStart(2, "0"))
     .join("")}`;
+}
+
+function mixOklab(from: string, to: string, amount: number) {
+  const fromLab = rgbToOklab(parseHexColor(from));
+  const toLab = rgbToOklab(parseHexColor(to));
+  const lab = fromLab.map((channel, index) => channel + (toLab[index] - channel) * amount);
+
+  return oklabToRgb(lab);
+}
+
+function rgbToOklab(rgb: number[]) {
+  const [red, green, blue] = rgb.map(srgbToLinear);
+  const l = Math.cbrt(0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue);
+  const m = Math.cbrt(0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue);
+  const s = Math.cbrt(0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue);
+
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
+}
+
+function oklabToRgb(lab: number[]) {
+  const [lightness, a, b] = lab;
+  const l = lightness + 0.3963377774 * a + 0.2158037573 * b;
+  const m = lightness - 0.1055613458 * a - 0.0638541728 * b;
+  const s = lightness - 0.0894841775 * a - 1.291485548 * b;
+  const l3 = l ** 3;
+  const m3 = m ** 3;
+  const s3 = s ** 3;
+
+  return [
+    4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3,
+    -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3,
+    -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3,
+  ].map(linearToSrgb);
+}
+
+function srgbToLinear(value: number) {
+  const channel = value / 255;
+
+  return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+}
+
+function linearToSrgb(value: number) {
+  const clamped = Math.max(0, Math.min(1, value));
+  const channel =
+    clamped <= 0.0031308
+      ? 12.92 * clamped
+      : 1.055 * clamped ** (1 / 2.4) - 0.055;
+
+  return Math.round(channel * 255);
 }
 
 function getOpeningToneForColor(color: string): OpeningBackground["tone"] {
@@ -835,7 +886,7 @@ function getOpeningTitleClassName(card: OpeningCard) {
     return "mt-8 max-w-[980px] break-keep text-[clamp(42px,7vw,104px)] font-black leading-[0.98] tracking-normal text-[#f8f5ec] max-sm:text-[38px]";
   }
   if (card.kind === "section") {
-    return "mt-8 max-w-[920px] break-keep text-[clamp(38px,6vw,86px)] font-black leading-[1.02] tracking-normal text-[#f5f2e8] max-sm:text-[34px]";
+    return "mt-8 max-w-[920px] break-keep text-[clamp(38px,6vw,86px)] font-black leading-[1.16] tracking-normal text-[#f5f2e8] max-sm:text-[34px]";
   }
   return "mt-8 max-w-[920px] break-keep text-[clamp(32px,4.35vw,66px)] font-black leading-[1.04] tracking-normal text-[#f5f2e8] max-sm:mt-6 max-sm:text-[32px]";
 }
