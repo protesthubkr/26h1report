@@ -153,7 +153,7 @@ export function AgendaReport({ data }: { data: PublicAgendaData }) {
     useState<OpeningTransitionTheme>("election");
 
   return (
-    <main className="h-[100dvh] overflow-hidden bg-white text-[#f1f0e8]">
+    <main className="h-[100dvh] overflow-hidden bg-transparent text-[#f1f0e8]">
       <section className="relative flex h-full min-h-0 flex-col">
         <div className="relative flex min-h-0 flex-1 items-stretch overflow-hidden bg-[#090908]">
           {hasExitedOpening ? (
