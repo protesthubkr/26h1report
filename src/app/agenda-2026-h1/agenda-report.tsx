@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import {
   useEffect,
   useRef,
@@ -105,7 +104,16 @@ type OpeningAgendaChoice = {
   agendaId: string;
   imageSrc: string;
   label: string;
+  transitionTheme: OpeningTransitionTheme;
 };
+
+type OpeningTransitionTheme =
+  | "disabled"
+  | "election"
+  | "gender"
+  | "labor"
+  | "palestine"
+  | "pride";
 
 type OpeningBackground = {
   current: string;
@@ -136,19 +144,23 @@ type DateRange = {
 
 export function AgendaReport({ data }: { data: PublicAgendaData }) {
   const [hasExitedOpening, setHasExitedOpening] = useState(false);
+  const [selectedTransitionTheme, setSelectedTransitionTheme] =
+    useState<OpeningTransitionTheme>("election");
 
   return (
     <main className="h-screen overflow-hidden bg-[#070707] text-[#f1f0e8]">
-      <TopBar />
-      <section className="relative mx-auto flex h-[calc(100vh-56px)] max-w-[1600px] flex-col px-8 py-6 max-sm:h-[calc(100svh-48px)] max-sm:px-3 max-sm:py-3">
+      <section className="relative flex h-screen flex-col max-sm:h-svh">
         <div className="relative flex min-h-0 flex-1 items-stretch overflow-hidden bg-[#090908]">
           {hasExitedOpening ? (
-            <AgendaWorkSurface />
+            <AgendaWorkSurface theme={selectedTransitionTheme} />
           ) : (
             <OpeningCardScrollPage
               agendas={data.agendas}
               cards={openingStoryCards}
-              onSelectAgenda={() => setHasExitedOpening(true)}
+              onSelectAgenda={(choice) => {
+                setSelectedTransitionTheme(choice.transitionTheme);
+                setHasExitedOpening(true);
+              }}
             />
           )}
         </div>
@@ -157,23 +169,8 @@ export function AgendaReport({ data }: { data: PublicAgendaData }) {
   );
 }
 
-function TopBar() {
-  return (
-    <header className="relative z-20 h-14 bg-[#070707] px-5 max-sm:h-12 max-sm:px-3">
-      <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between gap-4">
-        <Link className="text-[14px] font-black tracking-normal text-[#f1f0e8] max-sm:text-[13px]" href="/agenda-2026-h1">
-          2026 H1 Agenda Report
-        </Link>
-        <span className="hidden font-mono text-[11px] font-bold text-[#8d8d82] sm:block">
-          상반기 회고
-        </span>
-      </div>
-    </header>
-  );
-}
-
-function AgendaWorkSurface() {
-  return <article aria-label="어젠다 작업면" className="h-full w-full bg-[#050505]" />;
+function AgendaWorkSurface({ theme }: { theme: OpeningTransitionTheme }) {
+  return <article aria-label="어젠다 작업면" className="agenda-work-surface h-full w-full" data-theme={theme} />;
 }
 
 function OpeningCardScrollPage({
@@ -183,7 +180,7 @@ function OpeningCardScrollPage({
 }: {
   agendas: PublicAgenda[];
   cards: OpeningCard[];
-  onSelectAgenda: (agenda: PublicAgenda) => void;
+  onSelectAgenda: (choice: OpeningAgendaChoice & { agenda: PublicAgenda }) => void;
 }) {
   const stageRef = useRef<HTMLElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -252,7 +249,7 @@ function OpeningScrollCard({
   agendas: PublicAgenda[];
   card: OpeningCard;
   index: number;
-  onSelectAgenda: (agenda: PublicAgenda) => void;
+  onSelectAgenda: (choice: OpeningAgendaChoice & { agenda: PublicAgenda }) => void;
 }) {
   const cardRef = useRef<HTMLElement | null>(null);
   const [isVisible, setIsVisible] = useState(index === 0);
@@ -348,7 +345,7 @@ function OpeningClosingBridge({
 }: {
   agendas: PublicAgenda[];
   card: OpeningCard;
-  onSelectAgenda: (agenda: PublicAgenda) => void;
+  onSelectAgenda: (choice: OpeningAgendaChoice & { agenda: PublicAgenda }) => void;
 }) {
   const transitionTimers = useRef<number[]>([]);
   const [selectedChoiceKey, setSelectedChoiceKey] = useState<string | null>(null);
@@ -375,64 +372,121 @@ function OpeningClosingBridge({
   function handleChoiceClick(choice: OpeningAgendaChoice & { agenda: PublicAgenda }) {
     if (transitionStage !== "idle") return;
 
+    for (const timer of transitionTimers.current) window.clearTimeout(timer);
+    transitionTimers.current = [];
     setSelectedChoiceKey(getOpeningChoiceKey(choice));
     setTransitionStage("selected");
+    const transitionDuration = getOpeningTransitionDurationMs(choice.transitionTheme);
     transitionTimers.current.push(
       window.setTimeout(() => setTransitionStage("swipe"), 460),
-      window.setTimeout(() => onSelectAgenda(choice.agenda), 980),
+      window.setTimeout(() => onSelectAgenda(choice), transitionDuration),
     );
   }
 
+  const selectedChoice = choices.find(
+    (choice) => selectedChoiceKey === getOpeningChoiceKey(choice),
+  );
+
   return (
     <div
-      className="opening-closing-shell relative flex min-h-full w-full items-center justify-center"
+      className="opening-closing-stage relative flex min-h-full w-full items-center justify-center overflow-hidden"
       data-transition={transitionStage}
     >
-      <p className="opening-closing-copy absolute inset-x-0 mx-auto max-w-[760px] break-keep px-4 text-center text-[clamp(22px,3.4vw,46px)] font-black leading-[1.35] text-[#f6f2e8] max-sm:text-[24px]">
-        {card.lines.map((line, index) => (
-          <span className="block" key={`${line}-${index}`}>
-            {line}
-          </span>
-        ))}
-      </p>
-
-      <div className="opening-choice-panel flex w-full max-w-[1180px] flex-col gap-7 max-sm:gap-4">
-        <div className="opening-choice-header text-right text-[clamp(24px,3vw,48px)] font-black leading-none text-[#f6f2e8] max-sm:text-[23px]">
-          희망은 어디에 있을까요?
-        </div>
-
-        <div className="opening-choice-grid grid w-full grid-cols-2 grid-rows-3 gap-4 max-sm:h-[68svh] max-sm:gap-2 sm:h-[min(66vh,640px)]">
-          {choices.map((choice) => (
-            <button
-              className="opening-choice-card group relative min-h-0 overflow-hidden bg-[#111] text-left"
-              data-selected={
-                selectedChoiceKey ? getOpeningChoiceKey(choice) === selectedChoiceKey : undefined
-              }
-              key={`${choice.agendaId}-${choice.label}`}
-              onClick={() => handleChoiceClick(choice)}
-              type="button"
-            >
-              <Image
-                alt={choice.label}
-                className="object-cover transition duration-500 group-hover:scale-[1.025]"
-                fill
-                sizes="(max-width: 768px) 50vw, 42vw"
-                src={choice.imageSrc}
-                unoptimized
-              />
-              <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/82 via-black/48 to-transparent px-4 pb-4 pt-12 text-right text-[clamp(13px,1.3vw,19px)] font-black leading-none text-[#f7f2e8] max-sm:px-2.5 max-sm:pb-2.5 max-sm:pt-8 max-sm:text-[12px]">
-                <span className="block truncate">{choice.label}</span>
-              </span>
-            </button>
+      <div
+        className="opening-closing-shell relative flex min-h-full w-full items-center justify-center"
+        data-transition={transitionStage}
+      >
+        <p className="opening-closing-copy absolute inset-x-0 mx-auto max-w-[760px] break-keep px-4 text-center text-[clamp(22px,3.4vw,46px)] font-black leading-[1.35] text-[#f6f2e8] max-sm:text-[24px]">
+          {card.lines.map((line, index) => (
+            <span className="block" key={`${line}-${index}`}>
+              {line}
+            </span>
           ))}
+        </p>
+
+        <div className="opening-choice-panel flex w-full max-w-[1180px] flex-col gap-7 max-sm:gap-4">
+          <div className="opening-choice-header text-right text-[clamp(24px,3vw,48px)] font-black leading-none text-[#f6f2e8] max-sm:text-[23px]">
+            희망은 어디에 있을까요?
+          </div>
+
+          <div className="opening-choice-grid grid w-full grid-cols-2 grid-rows-3 gap-4 max-sm:h-[68svh] max-sm:gap-2 sm:h-[min(66vh,640px)]">
+            {choices.map((choice) => (
+              <button
+                className="opening-choice-card group relative min-h-0 overflow-hidden bg-[#111] text-left"
+                data-selected={
+                  selectedChoiceKey ? getOpeningChoiceKey(choice) === selectedChoiceKey : undefined
+                }
+                key={`${choice.agendaId}-${choice.label}`}
+                onClick={() => handleChoiceClick(choice)}
+                type="button"
+              >
+                <Image
+                  alt={choice.label}
+                  className="object-cover transition duration-500 group-hover:scale-[1.025]"
+                  fill
+                  sizes="(max-width: 768px) 50vw, 42vw"
+                  src={choice.imageSrc}
+                  unoptimized
+                />
+                <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/82 via-black/48 to-transparent px-4 pb-4 pt-12 text-right text-[clamp(13px,1.3vw,19px)] font-black leading-none text-[#f7f2e8] max-sm:px-2.5 max-sm:pb-2.5 max-sm:pt-8 max-sm:text-[12px]">
+                  <span className="block truncate">{choice.label}</span>
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
+      {selectedChoice ? <OpeningTransitionPage theme={selectedChoice.transitionTheme} /> : null}
     </div>
   );
 }
 
 function getOpeningChoiceKey(choice: OpeningAgendaChoice) {
   return `${choice.agendaId}::${choice.label}`;
+}
+
+function getOpeningTransitionDurationMs(theme: OpeningTransitionTheme) {
+  if (theme === "disabled") return 2580;
+  if (theme === "pride") return 2240;
+  if (theme === "palestine") return 1940;
+  return 1180;
+}
+
+function OpeningTransitionPage({ theme }: { theme: OpeningTransitionTheme }) {
+  return (
+    <div aria-hidden="true" className="opening-transition-page" data-theme={theme}>
+      {theme === "disabled" ? (
+        <Image
+          alt=""
+          className="opening-transition-media opening-transition-media-disabled"
+          fill
+          sizes="100vw"
+          src="/disabled.png"
+          unoptimized
+        />
+      ) : null}
+      {theme === "pride" ? (
+        <Image
+          alt=""
+          className="opening-transition-media opening-transition-media-pride"
+          fill
+          sizes="100vw"
+          src="/pride.avif"
+          unoptimized
+        />
+      ) : null}
+      {theme === "palestine" ? (
+        <Image
+          alt=""
+          className="opening-transition-media opening-transition-media-palestine"
+          fill
+          sizes="100vw"
+          src="/palestine-flag.png"
+          unoptimized
+        />
+      ) : null}
+    </div>
+  );
 }
 
 function OpeningVisual({ card, index }: { card: OpeningCard; index: number }) {
@@ -867,31 +921,37 @@ const closingAgendaChoices: OpeningAgendaChoice[] = [
     agendaId: "election-democracy",
     imageSrc: "/oh-win.jpg",
     label: "선거와 민주주의",
+    transitionTheme: "election",
   },
   {
     agendaId: "disability-rights",
     imageSrc: "/junjang.jpg",
     label: "왜 그들은 열차를 세웠을까",
+    transitionTheme: "disabled",
   },
   {
     agendaId: "rights-equality",
     imageSrc: "/queer.jpg",
     label: "서울시청과 퀴어퍼레이드",
+    transitionTheme: "pride",
   },
   {
     agendaId: "labor-safety",
     imageSrc: "/coupang.jpg",
     label: "일하다 죽지 않을 권리",
+    transitionTheme: "labor",
   },
   {
     agendaId: "rights-equality",
     imageSrc: "/jang.jpg",
     label: "여성 살해",
+    transitionTheme: "gender",
   },
   {
     agendaId: "peace-palestine",
     imageSrc: "/haecho.webp",
     label: "전쟁과 평화: 해초의 여권",
+    transitionTheme: "palestine",
   },
 ];
 
