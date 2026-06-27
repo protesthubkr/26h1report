@@ -743,7 +743,7 @@ function getOpeningChoiceKey(choice: OpeningAgendaChoice) {
 function getOpeningTransitionDurationMs(theme: OpeningTransitionTheme) {
   if (theme === "disabled") return 2580;
   if (theme === "pride") return 2700;
-  if (theme === "palestine") return 2700;
+  if (theme === "palestine") return 3600;
   return 1180;
 }
 
