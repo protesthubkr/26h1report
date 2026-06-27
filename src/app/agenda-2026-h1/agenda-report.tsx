@@ -92,7 +92,7 @@ type OpeningSource = {
 
 type OpeningCard = {
   accent: string;
-  copyAlign?: "center";
+  copyAlign?: "mobile-center";
   dateLabel: string;
   imageSrc?: string;
   imageLabel?: string;
@@ -450,7 +450,7 @@ function OpeningScrollCard({
       style={
         {
           "--event-accent": card.accent,
-          "--opening-card-blur": index === 0 ? "0px" : "8px",
+          "--opening-card-blur": "0px",
           "--opening-card-opacity": index === 0 ? 1 : 0.06,
           "--opening-card-scale": index === 0 ? 1 : 0.986,
           "--opening-bg-current": background.current,
@@ -567,6 +567,7 @@ function OpeningClosingBridge({
 
 function OpeningVisual({ card, index }: { card: OpeningCard; index: number }) {
   const youtubeEmbedUrl = getYouTubeEmbedUrl(card);
+  const youtubeVideoId = getYouTubeVideoId(card);
   const imageSize = card.imageSrc ? getOpeningImageSize(card.imageSrc) : null;
 
   return (
@@ -585,9 +586,18 @@ function OpeningVisual({ card, index }: { card: OpeningCard; index: number }) {
           />
         ) : youtubeEmbedUrl ? (
           <iframe
-            allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             className="opening-video-frame bg-black"
             src={youtubeEmbedUrl}
+            srcDoc={
+              youtubeVideoId
+                ? getYouTubeSrcDoc({
+                    embedUrl: youtubeEmbedUrl,
+                    title: card.imageLabel ?? card.title,
+                    videoId: youtubeVideoId,
+                  })
+                : undefined
+            }
             title={card.imageLabel ?? card.title}
           />
         ) : null}
@@ -693,10 +703,10 @@ function getOpeningMediaGroupClassName(card: OpeningCard) {
     "opening-media-copy-group grid w-full max-w-[1320px] content-center items-center";
 
   if (card.mediaKind === "youtube") {
-    return `${base} grid-cols-[minmax(320px,0.95fr)_minmax(0,0.78fr)] gap-10 max-lg:grid-cols-1 max-lg:gap-5 max-sm:gap-4`;
+    return `${base} grid-cols-[minmax(320px,0.95fr)_minmax(0,0.78fr)] gap-10 max-lg:grid-cols-1 max-lg:gap-3 max-sm:gap-3`;
   }
 
-  return `${base} grid-cols-[minmax(360px,1.08fr)_minmax(0,0.82fr)] gap-10 max-lg:grid-cols-1 max-lg:gap-6 max-sm:gap-5`;
+  return `${base} grid-cols-[minmax(360px,1.08fr)_minmax(0,0.82fr)] gap-10 max-lg:grid-cols-1 max-lg:gap-3 max-sm:gap-3`;
 }
 
 function getOpeningBackground(index: number): OpeningBackground {
@@ -749,7 +759,7 @@ function updateOpeningCardFocus(scroller: HTMLDivElement) {
     const focus = perceptualFadeFocus(linearFocus, topDelta < 0);
     card.style.setProperty("--opening-card-opacity", String(focus));
     card.style.setProperty("--opening-card-scale", String(0.986 + focus * 0.014));
-    card.style.setProperty("--opening-card-blur", `${(1 - focus) * 8}px`);
+    card.style.setProperty("--opening-card-blur", "0px");
   }
 }
 
@@ -890,7 +900,8 @@ function parseHexColor(value: string) {
 }
 
 function getOpeningCopyClassName(card: OpeningCard) {
-  const alignClass = card.copyAlign === "center" ? "items-center text-center" : "";
+  const alignClass =
+    card.copyAlign === "mobile-center" ? "max-lg:items-center max-lg:text-center" : "";
 
   if (card.kind === "story" && hasOpeningVisual(card)) {
     return `flex min-h-0 flex-col justify-center ${alignClass}`.trim();
@@ -906,11 +917,43 @@ function hasOpeningVisual(card: OpeningCard) {
 function getYouTubeEmbedUrl(card: OpeningCard) {
   if (card.mediaKind !== "youtube") return null;
 
-  const sourceUrl = card.sources?.find((source) => source.label === "YouTube")?.url;
-  const videoId = sourceUrl?.match(/(?:shorts\/|watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/)?.[1];
+  const videoId = getYouTubeVideoId(card);
   return videoId
-    ? `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1&playsinline=1&controls=0&fs=0&iv_load_policy=3&disablekb=1`
+    ? `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1&playsinline=1&controls=0&fs=0&iv_load_policy=3&disablekb=1&vq=hd1080`
     : null;
+}
+
+function getYouTubeVideoId(card: OpeningCard) {
+  if (card.mediaKind !== "youtube") return null;
+
+  const sourceUrl = card.sources?.find((source) => source.label === "YouTube")?.url;
+  return sourceUrl?.match(/(?:shorts\/|watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/)?.[1] ?? null;
+}
+
+function getYouTubeSrcDoc({
+  embedUrl,
+  title,
+  videoId,
+}: {
+  embedUrl: string;
+  title: string;
+  videoId: string;
+}) {
+  const thumbnailUrl = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+  const autoplayUrl = `${embedUrl}&autoplay=1`;
+  const safeTitle = escapeHtml(title);
+  const safeAutoplayUrl = escapeHtml(autoplayUrl);
+  const safeThumbnailUrl = escapeHtml(thumbnailUrl);
+
+  return `<style>*{box-sizing:border-box}html,body,a{display:block;width:100%;height:100%;margin:0;background:#000;overflow:hidden}img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.play{position:absolute;left:50%;top:50%;width:76px;height:54px;border-radius:16px;background:#ff0033;transform:translate(-50%,-50%);box-shadow:0 10px 28px rgba(0,0,0,.32)}.play:before{content:"";position:absolute;left:31px;top:15px;border-left:21px solid #fff;border-top:12px solid transparent;border-bottom:12px solid transparent}</style><a href="${safeAutoplayUrl}" aria-label="${safeTitle}"><img src="${safeThumbnailUrl}" alt="${safeTitle}"><span class="play" aria-hidden="true"></span></a>`;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function getOpeningImageSize(src: string) {
@@ -1337,7 +1380,7 @@ const openingStoryCards: OpeningCard[] = [
   },
   {
     accent: "#a7b0ff",
-    copyAlign: "center",
+    copyAlign: "mobile-center",
     dateLabel: "지방선거 이후",
     imageLabel: "서울광장 퀴어퍼레이드 관련 발언",
     kind: "story",
@@ -1353,7 +1396,7 @@ const openingStoryCards: OpeningCard[] = [
   },
   {
     accent: "#a7b0ff",
-    copyAlign: "center",
+    copyAlign: "mobile-center",
     dateLabel: "지방선거 이후",
     imageLabel: "전장연 시위 관련 발언",
     kind: "story",
@@ -1491,7 +1534,7 @@ const openingStoryCards: OpeningCard[] = [
   },
   {
     accent: "#d97997",
-    copyAlign: "center",
+    copyAlign: "mobile-center",
     dateLabel: "여성 살해",
     imageLabel: "남양주 스토킹 살인 사건",
     kind: "story",
@@ -1507,7 +1550,7 @@ const openingStoryCards: OpeningCard[] = [
   },
   {
     accent: "#d97997",
-    copyAlign: "center",
+    copyAlign: "mobile-center",
     dateLabel: "여성 살해",
     imageLabel: "안산 성폭행 고소 피해자 사망 사건",
     kind: "story",
