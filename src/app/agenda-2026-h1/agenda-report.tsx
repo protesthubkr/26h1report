@@ -713,11 +713,13 @@ function OpeningClosingBridge({
                 }
                 key={`${choice.agendaId}-${choice.label}`}
                 onClick={() => handleChoiceClick(choice)}
+                onContextMenu={(event) => event.preventDefault()}
                 type="button"
               >
                 <Image
                   alt={choice.label}
-                  className="object-cover transition duration-500 group-hover:scale-[1.025]"
+                  className="pointer-events-none select-none object-cover transition duration-500 group-hover:scale-[1.025]"
+                  draggable={false}
                   fill
                   sizes="(max-width: 768px) 50vw, 42vw"
                   src={choice.imageSrc}
@@ -763,11 +765,12 @@ function OpeningTransitionPage({ theme }: { theme: OpeningTransitionTheme }) {
       {theme === "pride" ? (
         <Image
           alt=""
+          aria-hidden="true"
           className="opening-transition-media opening-transition-media-pride"
-          fill
-          sizes="100vw"
+          height={860}
           src="/pride.avif"
           unoptimized
+          width={860}
         />
       ) : null}
       {theme === "palestine" ? <div className="opening-transition-media opening-transition-media-palestine" /> : null}
