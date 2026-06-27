@@ -419,6 +419,7 @@ function OpeningScrollCard({
   const cardRef = useRef<HTMLElement | null>(null);
   const [isVisible, setIsVisible] = useState(index === 0);
   const background = getOpeningBackground(index);
+  const hasVisual = hasOpeningVisual(card);
 
   useEffect(() => {
     const element = cardRef.current;
@@ -463,9 +464,9 @@ function OpeningScrollCard({
           card={card}
           onSelectAgenda={onSelectAgenda}
         />
-      ) : (
-        <>
-          {hasOpeningVisual(card) ? <OpeningVisual card={card} index={index} /> : null}
+      ) : hasVisual ? (
+        <div className={getOpeningMediaGroupClassName(card)}>
+          <OpeningVisual card={card} index={index} />
 
           <div className={getOpeningCopyClassName(card)}>
             <div className="opening-card-content">
@@ -481,7 +482,22 @@ function OpeningScrollCard({
               )}
             </div>
           </div>
-        </>
+        </div>
+      ) : (
+        <div className={getOpeningCopyClassName(card)}>
+          <div className="opening-card-content">
+            {card.kind === "story" ? (
+              <OpeningLines lines={card.lines} variant="story" />
+            ) : (
+              <>
+                <h1 className={getOpeningTitleClassName(card)}>
+                  <OpeningTitleText title={card.title} />
+                </h1>
+                <OpeningLines lines={card.lines} />
+              </>
+            )}
+          </div>
+        </div>
       )}
     </section>
   );
@@ -657,15 +673,26 @@ function getOpeningCardClassName(card: OpeningCard) {
     return "opening-snap-card flex min-h-full items-center justify-center px-8 py-8 max-sm:px-3 max-sm:py-3";
   }
   if (card.kind === "story" && card.mediaKind === "youtube") {
-    return "opening-snap-card grid min-h-full grid-cols-[minmax(420px,1.18fr)_minmax(0,0.82fr)] gap-12 px-12 py-10 max-lg:grid-cols-1 max-lg:gap-7 max-sm:gap-4 max-sm:px-3 max-sm:py-4";
+    return "opening-snap-card flex min-h-full items-center justify-center px-12 py-10 max-sm:px-3 max-sm:py-4";
   }
   if (card.kind === "story" && hasOpeningVisual(card)) {
-    return "opening-snap-card grid min-h-full grid-cols-[minmax(420px,1.18fr)_minmax(0,0.82fr)] gap-12 px-12 py-10 max-lg:grid-cols-1 max-lg:gap-7 max-sm:px-5 max-sm:py-6";
+    return "opening-snap-card flex min-h-full items-center justify-center px-12 py-10 max-sm:px-5 max-sm:py-6";
   }
   if (card.kind === "story") {
     return "opening-snap-card flex min-h-full flex-col justify-center px-12 py-14 max-sm:px-5 max-sm:py-8";
   }
   return "opening-snap-card flex min-h-full flex-col justify-center px-12 py-14 max-sm:px-5 max-sm:py-8";
+}
+
+function getOpeningMediaGroupClassName(card: OpeningCard) {
+  const base =
+    "opening-media-copy-group grid w-full max-w-[1320px] content-center items-center";
+
+  if (card.mediaKind === "youtube") {
+    return `${base} grid-cols-[minmax(320px,0.95fr)_minmax(0,0.78fr)] gap-10 max-lg:grid-cols-1 max-lg:gap-5 max-sm:gap-4`;
+  }
+
+  return `${base} grid-cols-[minmax(360px,1.08fr)_minmax(0,0.82fr)] gap-10 max-lg:grid-cols-1 max-lg:gap-6 max-sm:gap-5`;
 }
 
 function getOpeningBackground(index: number): OpeningBackground {
