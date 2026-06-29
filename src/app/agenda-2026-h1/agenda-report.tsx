@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -10,6 +11,11 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import {
+  agendaPageThemes,
+  type AgendaPageSlug,
+  type AgendaTransitionTheme,
+} from "./agenda-page-themes";
 
 type OpeningSource = {
   label: string;
@@ -33,22 +39,17 @@ type OpeningAgendaChoice = {
   agendaId: string;
   imageSrc: string;
   label: string;
-  transitionTheme: OpeningTransitionTheme;
+  slug: AgendaPageSlug;
 };
 
-type OpeningTransitionTheme =
-  | "disabled"
-  | "election"
-  | "gender"
-  | "labor"
-  | "palestine"
-  | "pride";
+type OpeningTransitionTheme = AgendaTransitionTheme;
 
 type OpeningTone = "light" | "dark";
 
 const OPENING_LAST_CARD_SCROLL_MS = 2200;
 const OPENING_LONG_PRESS_SCROLL_MS = 2800;
 const OPENING_LONG_JUMP_CONTENT_FADE_MS = 240;
+const OPENING_NEXT_CARD_SCROLL_MS = 720;
 const OPENING_CHOICE_REVEAL_DELAY_MS = 4800;
 const OPENING_CHOICE_AFTER_REVEAL_INPUT_DELAY_MS = 850;
 const OPENING_CHOICE_INPUT_ARM_DELAY_MS =
@@ -56,6 +57,9 @@ const OPENING_CHOICE_INPUT_ARM_DELAY_MS =
 const OPENING_CHOICE_GRID_MS = 720;
 const OPENING_CHOICE_FORCED_GRID_MS = 420;
 const OPENING_CLOSING_COPY_MS = 5200;
+const OPENING_PGDN_LONG_PRESS_MS = 620;
+const OPENING_PGDN_CLICK_SUPPRESS_MS = 900;
+const OPENING_PGDN_POINTER_CLICK_SUPPRESS_MS = 500;
 const OPENING_TRANSITION_STAGE_MS = 460;
 const OPENING_TRANSITION_DURATIONS_MS: Record<OpeningTransitionTheme, number> = {
   disabled: 3200,
@@ -67,36 +71,27 @@ const OPENING_TRANSITION_DURATIONS_MS: Record<OpeningTransitionTheme, number> = 
 };
 
 export function AgendaReport() {
-  const [hasExitedOpening, setHasExitedOpening] = useState(false);
-  const [selectedTransitionTheme, setSelectedTransitionTheme] =
-    useState<OpeningTransitionTheme>("election");
+  const router = useRouter();
+
+  useEffect(() => {
+    for (const choice of closingAgendaChoices) {
+      router.prefetch(getOpeningChoiceHref(choice));
+    }
+  }, [router]);
 
   return (
     <main className="h-[100dvh] overflow-hidden bg-transparent text-[#f1f0e8]">
       <section className="relative flex h-full min-h-0 flex-col">
         <div className="relative flex min-h-0 flex-1 items-stretch overflow-hidden bg-transparent">
-          {hasExitedOpening ? (
-            <AgendaWorkSurface theme={selectedTransitionTheme} />
-          ) : (
-            <OpeningCardScrollPage
-              cards={openingStoryCards}
-              onSelectAgenda={(choice) => {
-                setSelectedTransitionTheme(choice.transitionTheme);
-                setHasExitedOpening(true);
-              }}
-            />
-          )}
+          <OpeningCardScrollPage
+            cards={openingStoryCards}
+            onSelectAgenda={(choice) => {
+              router.push(getOpeningChoiceHref(choice));
+            }}
+          />
         </div>
       </section>
     </main>
-  );
-}
-
-function AgendaWorkSurface({ theme }: { theme: OpeningTransitionTheme }) {
-  return (
-    <article aria-label="어젠다 작업면" className="agenda-work-surface h-full w-full">
-      <div aria-hidden="true" className="agenda-work-surface-fill" data-theme={theme} />
-    </article>
   );
 }
 
@@ -110,10 +105,14 @@ function OpeningCardScrollPage({
   const stageRef = useRef<HTMLElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const scrollAnimationFrameRef = useRef<number | null>(null);
+  const scrollAnimationTargetTopRef = useRef<number | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
+  const longPressClickSuppressTimerRef = useRef<number | null>(null);
+  const pointerClickSuppressTimerRef = useRef<number | null>(null);
   const stableViewportWidthRef = useRef<number | null>(null);
   const topButtonRevealTimerRef = useRef<number | null>(null);
   const didLongPressRef = useRef(false);
+  const didActivatePgDnOnPointerUpRef = useRef(false);
   const isPgDnHiddenRef = useRef(false);
   const isPgDnHintVisibleRef = useRef(true);
   const isFinalCardSettledRef = useRef(false);
@@ -300,6 +299,10 @@ function OpeningCardScrollPage({
         window.cancelAnimationFrame(scrollAnimationFrameRef.current);
         scrollAnimationFrameRef.current = null;
       }
+      scrollAnimationTargetTopRef.current = null;
+      clearLongPressTimer();
+      clearLongPressClickSuppressTimer();
+      clearPointerClickSuppressTimer();
       scroller.classList.remove("opening-scroll-snap-manual");
       scroller.removeEventListener("scroll", requestUpdate);
       scroller.removeEventListener("scrollend", updateBackground);
@@ -347,12 +350,47 @@ function OpeningCardScrollPage({
     longPressTimerRef.current = null;
   }
 
+  function clearLongPressClickSuppressTimer() {
+    if (longPressClickSuppressTimerRef.current === null) return;
+    window.clearTimeout(longPressClickSuppressTimerRef.current);
+    longPressClickSuppressTimerRef.current = null;
+  }
+
+  function clearLongPressClickSuppress() {
+    didLongPressRef.current = false;
+    clearLongPressClickSuppressTimer();
+  }
+
+  function clearPointerClickSuppressTimer() {
+    if (pointerClickSuppressTimerRef.current === null) return;
+    window.clearTimeout(pointerClickSuppressTimerRef.current);
+    pointerClickSuppressTimerRef.current = null;
+  }
+
+  function suppressSyntheticClickAfterPointerActivation() {
+    didActivatePgDnOnPointerUpRef.current = true;
+    clearPointerClickSuppressTimer();
+    pointerClickSuppressTimerRef.current = window.setTimeout(() => {
+      didActivatePgDnOnPointerUpRef.current = false;
+      pointerClickSuppressTimerRef.current = null;
+    }, OPENING_PGDN_POINTER_CLICK_SUPPRESS_MS);
+  }
+
+  function suppressNextPgDnClickBriefly() {
+    didLongPressRef.current = true;
+    clearLongPressClickSuppressTimer();
+    longPressClickSuppressTimerRef.current = window.setTimeout(() => {
+      clearLongPressClickSuppress();
+    }, OPENING_PGDN_CLICK_SUPPRESS_MS);
+  }
+
   function cancelOpeningScrollAnimation(scroller = scrollerRef.current) {
     if (scrollAnimationFrameRef.current !== null) {
       window.cancelAnimationFrame(scrollAnimationFrameRef.current);
       scrollAnimationFrameRef.current = null;
     }
 
+    scrollAnimationTargetTopRef.current = null;
     scroller?.classList.remove("opening-scroll-snap-manual");
   }
 
@@ -385,6 +423,7 @@ function OpeningCardScrollPage({
 
     if (Math.abs(finalTop - startTop) < 1) {
       scroller.scrollTop = finalTop;
+      scrollAnimationTargetTopRef.current = null;
       updateOpeningCardFocus(scroller);
       updateFloatingNavigation(scroller);
       onComplete?.();
@@ -392,6 +431,7 @@ function OpeningCardScrollPage({
     }
 
     const startedAt = performance.now();
+    scrollAnimationTargetTopRef.current = finalTop;
     scroller.classList.add("opening-scroll-snap-manual");
 
     const step = (now: number) => {
@@ -406,6 +446,7 @@ function OpeningCardScrollPage({
 
       scroller.scrollTop = finalTop;
       scrollAnimationFrameRef.current = null;
+      scrollAnimationTargetTopRef.current = null;
       scroller.classList.remove("opening-scroll-snap-manual");
       updateOpeningCardFocus(scroller);
       updateFloatingNavigation(scroller);
@@ -424,7 +465,7 @@ function OpeningCardScrollPage({
     const snapCards = Array.from(
       scroller.querySelectorAll<HTMLElement>(".opening-snap-card"),
     );
-    const currentTop = scroller.scrollTop;
+    const currentTop = scrollAnimationTargetTopRef.current ?? scroller.scrollTop;
     const nextCard = snapCards.find((snapCard) => snapCard.offsetTop > currentTop + 24);
     const lastCard = snapCards.at(-1);
     const targetTop = nextCard
@@ -437,11 +478,7 @@ function OpeningCardScrollPage({
       return;
     }
 
-    cancelOpeningScrollAnimation(scroller);
-    scroller.scrollTo({
-      behavior: "smooth",
-      top: targetTop,
-    });
+    animateOpeningScrollTo(scroller, targetTop, OPENING_NEXT_CARD_SCROLL_MS);
   }
 
   function getCurrentOpeningSnapCard(snapCards: HTMLElement[]) {
@@ -521,22 +558,41 @@ function OpeningCardScrollPage({
   }
 
   function handlePgDnPointerDown() {
-    didLongPressRef.current = false;
+    clearLongPressClickSuppress();
     clearLongPressTimer();
     longPressTimerRef.current = window.setTimeout(() => {
-      didLongPressRef.current = true;
+      suppressNextPgDnClickBriefly();
       scrollToLastCard({ hideIntermediates: true });
       clearLongPressTimer();
-    }, 620);
+    }, OPENING_PGDN_LONG_PRESS_MS);
   }
 
   function handlePgDnPointerEnd() {
     clearLongPressTimer();
   }
 
+  function handlePgDnPointerUp(event: ReactPointerEvent<HTMLButtonElement>) {
+    clearLongPressTimer();
+
+    if (event.pointerType !== "mouse" || didLongPressRef.current) {
+      return;
+    }
+
+    suppressSyntheticClickAfterPointerActivation();
+    scrollToNextCard();
+  }
+
   function handlePgDnClick() {
+    clearLongPressTimer();
+
+    if (didActivatePgDnOnPointerUpRef.current) {
+      didActivatePgDnOnPointerUpRef.current = false;
+      clearPointerClickSuppressTimer();
+      return;
+    }
+
     if (didLongPressRef.current) {
-      didLongPressRef.current = false;
+      clearLongPressClickSuppress();
       return;
     }
 
@@ -570,8 +626,8 @@ function OpeningCardScrollPage({
         aria-hidden="true"
         className={`opening-pgdn-hint${isPgDnHidden || !isPgDnHintVisible ? " opening-pgdn-hint-hidden" : ""}`}
       >
-        <span>꾹 누르면</span>
-        <span>마지막으로</span>
+        <span>한번 누르면 다음으로</span>
+        <span>꾹 누르면 마지막으로</span>
       </span>
       <button
         aria-label="다음 카드로 내려가기. 길게 누르면 마지막으로 이동"
@@ -583,7 +639,7 @@ function OpeningCardScrollPage({
         onPointerCancel={handlePgDnPointerEnd}
         onPointerDown={handlePgDnPointerDown}
         onPointerLeave={handlePgDnPointerEnd}
-        onPointerUp={handlePgDnPointerEnd}
+        onPointerUp={handlePgDnPointerUp}
         type="button"
       >
         <Image
@@ -838,7 +894,8 @@ function OpeningClosingBridge({
     onBeginAgendaTransition();
     setSelectedChoiceKey(getOpeningChoiceKey(choice));
     setTransitionStage("selected");
-    const transitionDuration = getOpeningTransitionDurationMs(choice.transitionTheme);
+    const transitionTheme = getOpeningChoiceTheme(choice).transitionTheme;
+    const transitionDuration = getOpeningTransitionDurationMs(transitionTheme);
     transitionTimers.current.push(
       window.setTimeout(() => setTransitionStage("swipe"), OPENING_TRANSITION_STAGE_MS),
       window.setTimeout(() => onSelectAgenda(choice), transitionDuration),
@@ -908,13 +965,23 @@ function OpeningClosingBridge({
           </div>
         </div>
       </div>
-      {selectedChoice ? <OpeningTransitionPage theme={selectedChoice.transitionTheme} /> : null}
+      {selectedChoice ? (
+        <OpeningTransitionPage theme={getOpeningChoiceTheme(selectedChoice).transitionTheme} />
+      ) : null}
     </div>
   );
 }
 
 function getOpeningChoiceKey(choice: OpeningAgendaChoice) {
   return `${choice.agendaId}::${choice.label}`;
+}
+
+function getOpeningChoiceTheme(choice: OpeningAgendaChoice) {
+  return agendaPageThemes[choice.slug];
+}
+
+function getOpeningChoiceHref(choice: OpeningAgendaChoice) {
+  return `/agenda-2026-h1/${choice.slug}`;
 }
 
 function getOpeningTransitionDurationMs(theme: OpeningTransitionTheme) {
@@ -1434,37 +1501,37 @@ const closingAgendaChoices: OpeningAgendaChoice[] = [
     agendaId: "election-democracy",
     imageSrc: "/oh-win.jpg",
     label: "선거와 민주주의",
-    transitionTheme: "election",
+    slug: "election",
   },
   {
     agendaId: "disability-rights",
     imageSrc: "/junjang.jpg",
-    label: "왜 그들은 다시 열차를 세울까",
-    transitionTheme: "disabled",
+    label: "왜 그들은 열차를 세울까",
+    slug: "stop-the-train",
   },
   {
     agendaId: "rights-equality",
     imageSrc: "/queer.jpg",
     label: "서울시청과 퀴어퍼레이드",
-    transitionTheme: "pride",
+    slug: "marriage-for-all",
   },
   {
     agendaId: "labor-safety",
     imageSrc: "/coupang.jpg",
     label: "일하다 죽지 않을 권리",
-    transitionTheme: "labor",
+    slug: "labour-rights",
   },
   {
     agendaId: "rights-equality",
     imageSrc: "/jang.jpg",
     label: "여성 살해",
-    transitionTheme: "gender",
+    slug: "femicide",
   },
   {
     agendaId: "peace-palestine",
     imageSrc: "/haecho.webp",
     label: "전쟁과 평화: 해초의 여권",
-    transitionTheme: "palestine",
+    slug: "peace-for-palestine",
   },
 ];
 
